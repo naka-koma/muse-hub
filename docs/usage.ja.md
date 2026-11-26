@@ -15,6 +15,7 @@
 | `MUSE_HUB_TAILSCALE_HOST` | 未設定 | Serve経由の接続を許可するTailscaleのホスト名。HTTPSポートが443以外なら`:ポート番号`を付けます。 |
 | `MUSE_HUB_PHASE1_AUTH_VOLUME` | 未設定 | 専用のDockerログインボリューム。設定すると [Phase 1の `ask` 検証](phase1-isolation.ja.md) を有効にします。 |
 | `MUSE_HUB_PHASE2_DB` | 未設定 | SQLiteファイルの保存先。設定すると [Phase 2の非同期ジョブ検証](phase2-jobs.ja.md) を有効にします。 |
+| `MUSE_HUB_PHASE3_POLICY` | 未設定 | [Phase 3のポリシーと監査](phase3-policy.ja.md) に使うYAMLのパス。ジョブDBの設定も必要です。 |
 
 Museがカスタムコネクタでどの形式を送れるかは、このサーバーだけでは確定できません。`Authorization: Bearer`が通らない場合は、Muse側で確認した形式に合わせてヘッダー設定を変更してください。
 
