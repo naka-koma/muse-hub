@@ -14,16 +14,17 @@ import (
 )
 
 type Features struct {
-	Ask    *tools.Ask
-	Jobs   *asyncjobs.Manager
-	Policy *policy.Policy
+	Ask       *tools.Ask
+	Jobs      *asyncjobs.Manager
+	Policy    *policy.Policy
+	Approvals bool
 }
 
 func NewHandler(authConfig auth.Config, tailscaleHost string, logger *slog.Logger, features Features) http.Handler {
 	server := mcp.NewServer(&mcp.Implementation{Name: "muse-hub", Version: "0.1.0"}, nil)
 	if features.Jobs != nil {
 		tools.Register(server, nil, logger)
-		tools.RegisterDelegation(server, features.Jobs, logger, features.Policy)
+		tools.RegisterDelegation(server, features.Jobs, logger, features.Policy, features.Approvals)
 	} else {
 		tools.Register(server, jobs.NewManager(), logger)
 		if features.Ask != nil {

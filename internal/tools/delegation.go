@@ -31,11 +31,14 @@ type ListJobsOutput struct {
 	Jobs []asyncjobs.Snapshot `json:"jobs"`
 }
 
-func RegisterDelegation(server *mcp.Server, manager *asyncjobs.Manager, logger *slog.Logger, rules *policy.Policy) {
+func RegisterDelegation(server *mcp.Server, manager *asyncjobs.Manager, logger *slog.Logger, rules *policy.Policy, approvals bool) {
 	gate := policyGate{policy: rules, manager: manager}
 	if rules != nil {
 		gate.register(server)
 		gate.registerReview(server, logger)
+		if approvals {
+			gate.registerProposals(server)
+		}
 	}
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "delegate",

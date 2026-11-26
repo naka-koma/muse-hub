@@ -152,6 +152,52 @@ func FromConfig(cfg Config) (*Policy, error) {
 
 func (p *Policy) Revision() string { return p.revision }
 
+// NoBroaderThan also checks effective agent overrides: removing an override
+// can broaden access when the category default is less restrictive.
+func (p *Policy) NoBroaderThan(current *Policy) bool {
+	if p.config.Execution.Read && !current.config.Execution.Read || p.config.Execution.Consult && !current.config.Execution.Consult {
+		return false
+	}
+	for _, resource := range p.config.Resources {
+		if !hasResource(current.config.Resources, resource) {
+			return false
+		}
+	}
+	agents := map[string]bool{"": true}
+	for agent := range p.config.Agents {
+		agents[agent] = true
+	}
+	for agent := range current.config.Agents {
+		agents[agent] = true
+	}
+	for category := range p.config.Data {
+		for agent := range agents {
+			if levelRank(p.limit(agent, category)) > levelRank(current.limit(agent, category)) {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+func levelRank(level Level) int {
+	switch level {
+	case Full:
+		return 2
+	case Summary:
+		return 1
+	default:
+		return 0
+	}
+}
+
+func (p *Policy) limit(agent, category string) Level {
+	if override, ok := p.config.Agents[agent][category]; ok {
+		return override
+	}
+	return p.config.Data[category]
+}
+
 // Config returns an independent copy suitable for displaying the effective policy.
 func (p *Policy) Config() Config {
 	raw, _ := json.Marshal(p.config)
@@ -191,10 +237,7 @@ func (p *Policy) Check(access Access) Decision {
 			return Decision{Code: MixedCategories}
 		}
 		category := portion.Categories[0]
-		limit := p.config.Data[category]
-		if override, ok := p.config.Agents[access.Agent][category]; ok {
-			limit = override
-		}
+		limit := p.limit(access.Agent, category)
 		if !validLevel(portion.Level) || portion.Level == None || limit == None || (limit == Summary && portion.Level != Summary) {
 			return Decision{Code: DisclosureDeny, Category: category, Level: limit}
 		}

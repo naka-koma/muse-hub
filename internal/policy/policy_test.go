@@ -68,3 +68,27 @@ func TestPolicyOrderAndDisclosure(t *testing.T) {
 		}
 	}
 }
+
+func TestNoBroaderThanChecksEffectiveOverrides(t *testing.T) {
+	base, err := Parse([]byte(sample))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, change := range []struct {
+		apply func(*Config)
+		want  bool
+	}{
+		{func(c *Config) { c.Agents = nil }, false},
+		{func(c *Config) { c.Resources = append(c.Resources, "another") }, false},
+		{func(c *Config) { c.Execution.Consult = false }, true},
+		{func(c *Config) { c.Data["creative"] = None }, true},
+		{func(c *Config) { c.Data["new"] = Summary }, false},
+	} {
+		candidate := base.Config()
+		change.apply(&candidate)
+		proposal, err := FromConfig(candidate)
+		if err != nil || proposal.NoBroaderThan(base) != change.want {
+			t.Fatalf("incorrect widening classification: %v", err)
+		}
+	}
+}

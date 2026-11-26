@@ -45,6 +45,24 @@ CREATE TABLE IF NOT EXISTS review_sessions (
 CREATE TABLE IF NOT EXISTS review_jobs (
 	job_id TEXT PRIMARY KEY REFERENCES delegate_jobs(id) ON DELETE CASCADE,
 	session_id TEXT NOT NULL REFERENCES review_sessions(id)
+);
+CREATE TABLE IF NOT EXISTS managed_policy (
+	id INTEGER PRIMARY KEY CHECK(id=1),
+	generation INTEGER NOT NULL,
+	revision TEXT NOT NULL,
+	config BLOB NOT NULL
+);
+CREATE TABLE IF NOT EXISTS policy_proposals (
+	id TEXT PRIMARY KEY,
+	base_generation INTEGER NOT NULL,
+	base_revision TEXT NOT NULL,
+	revision TEXT NOT NULL,
+	config BLOB NOT NULL,
+	reason TEXT NOT NULL,
+	status TEXT NOT NULL CHECK(status IN ('pending','approved','auto_applied','rejected','expired','superseded')),
+	created_at INTEGER NOT NULL,
+	expires_at INTEGER NOT NULL,
+	decided_at INTEGER
 );`
 
 const snapshotColumns = "j.id, j.status, j.created_at, j.started_at, j.finished_at, j.result, r.session_id"

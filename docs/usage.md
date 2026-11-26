@@ -16,6 +16,7 @@ English | [日本語](usage.ja.md) | [Setup and first run](../README.md)
 | `MUSE_HUB_PHASE1_AUTH_VOLUME` | Unset | Dedicated Docker login volume. Setting it enables the [Phase 1 `ask` check](phase1-isolation.md). |
 | `MUSE_HUB_PHASE2_DB` | Unset | Local SQLite path. Setting it enables the [Phase 2 asynchronous job check](phase2-jobs.md). |
 | `MUSE_HUB_PHASE3_POLICY` | Unset | Local YAML path for [Phase 3 policy and audit](phase3-policy.md). Requires the job database. |
+| `MUSE_HUB_PHASE5_APPROVALS` | Unset | Set to `1` to enable [policy proposals and local approval](phase5-approval.md). Requires the policy path and job database. |
 
 This server alone cannot determine which authentication format Muse's custom connector supports. If `Authorization: Bearer` does not work, confirm the format Muse supports and adjust the header settings accordingly.
 
