@@ -57,8 +57,14 @@ func main() {
 	if cfg.phase2DB != "" {
 		startup, cancel := context.WithTimeout(ctx, 5*time.Second)
 		features.Jobs, err = asyncjobs.Open(startup, cfg.phase2DB, 30*time.Second)
+		if err == nil && features.Policy != nil {
+			err = features.Jobs.InvalidateReviewSessions(startup, features.Policy.Revision())
+		}
 		cancel()
 		if err != nil {
+			if features.Jobs != nil {
+				_ = features.Jobs.Close()
+			}
 			logger.Error("Phase 2 startup rejected", "error", err.Error())
 			os.Exit(1)
 		}

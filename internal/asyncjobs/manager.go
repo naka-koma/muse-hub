@@ -1,11 +1,9 @@
 package asyncjobs
 
 import (
-	"bytes"
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
-	"database/sql"
 	"encoding/hex"
 	"errors"
 	"regexp"
@@ -45,12 +43,13 @@ const (
 )
 
 type Snapshot struct {
-	JobID      string     `json:"job_id"`
-	Status     Status     `json:"status"`
-	CreatedAt  time.Time  `json:"created_at"`
-	StartedAt  *time.Time `json:"started_at,omitempty"`
-	FinishedAt *time.Time `json:"finished_at,omitempty"`
-	Result     *string    `json:"result,omitempty"`
+	JobID         string     `json:"job_id"`
+	Status        Status     `json:"status"`
+	CreatedAt     time.Time  `json:"created_at"`
+	StartedAt     *time.Time `json:"started_at,omitempty"`
+	FinishedAt    *time.Time `json:"finished_at,omitempty"`
+	Result        *string    `json:"result,omitempty"`
+	ReviewSession string     `json:"session_id,omitempty"`
 }
 
 type Submission struct {
@@ -62,9 +61,10 @@ type Submission struct {
 }
 
 type activeJob struct {
-	session string
-	cancel  context.CancelCauseFunc
-	done    chan struct{}
+	session      string
+	reviewRounds int
+	cancel       context.CancelCauseFunc
+	done         chan struct{}
 }
 
 type Manager struct {
@@ -103,42 +103,52 @@ func (m *Manager) Submit(ctx context.Context, input Submission) (string, error) 
 	if err := m.ready(ctx); err != nil {
 		return "", err
 	}
-	var priorID string
-	var priorFingerprint []byte
-	err := m.store.conn.QueryRowContext(ctx, `SELECT id, fingerprint FROM delegate_jobs WHERE request_key=?`, requestKey[:]).Scan(&priorID, &priorFingerprint)
-	if err == nil {
-		if !bytes.Equal(priorFingerprint, fingerprint[:]) {
-			return "", ErrConflict
-		}
-		return priorID, nil
+	priorID, err := m.store.priorJob(ctx, requestKey, fingerprint)
+	if err != nil || priorID != "" {
+		return priorID, err
 	}
-	if !errors.Is(err, sql.ErrNoRows) {
-		return "", ErrUnavailable
+	if err := m.checkCapacity(input.Session); err != nil {
+		return "", err
 	}
-	for _, job := range m.active {
-		if input.Session != "" && job.session == input.Session {
-			return "", ErrSessionBusy
-		}
+	id, err := newID()
+	if err != nil {
+		return "", err
 	}
-	if len(m.active) >= MaxConcurrent {
-		return "", ErrAtCapacity
-	}
-	var random [16]byte
-	if _, err := rand.Read(random[:]); err != nil {
-		return "", ErrUnavailable
-	}
-	id := hex.EncodeToString(random[:])
 	if _, err := m.store.conn.ExecContext(ctx, `INSERT INTO delegate_jobs(id, request_key, fingerprint, status, created_at)
 		VALUES (?, ?, ?, 'queued', ?)`, id, requestKey[:], fingerprint[:], m.now().UnixMilli()); err != nil {
 		return "", ErrUnavailable
 	}
+	m.start(id, input.Session, 0, input.Run)
+	return id, nil
+}
+
+func (m *Manager) checkCapacity(session string) error {
+	for _, job := range m.active {
+		if session != "" && job.session == session {
+			return ErrSessionBusy
+		}
+	}
+	if len(m.active) >= MaxConcurrent {
+		return ErrAtCapacity
+	}
+	return nil
+}
+
+func newID() (string, error) {
+	var random [16]byte
+	if _, err := rand.Read(random[:]); err != nil {
+		return "", ErrUnavailable
+	}
+	return hex.EncodeToString(random[:]), nil
+}
+
+func (m *Manager) start(id, session string, reviewRounds int, run func(context.Context) (string, error)) {
 	// A queued job outlives the request that submitted it.
 	jobCtx, cancel := context.WithCancelCause(context.Background())
-	job := &activeJob{session: input.Session, cancel: cancel, done: make(chan struct{})}
+	job := &activeJob{session: session, reviewRounds: reviewRounds, cancel: cancel, done: make(chan struct{})}
 	m.active[id] = job
 	m.workers.Add(1)
-	go m.execute(jobCtx, id, job, input.Run)
-	return id, nil
+	go m.execute(jobCtx, id, job, run)
 }
 
 func (m *Manager) execute(ctx context.Context, id string, job *activeJob, run func(context.Context) (string, error)) {
@@ -175,8 +185,7 @@ func (m *Manager) execute(ctx context.Context, id string, job *activeJob, run fu
 	case canRun && runErr == nil:
 		state, saved = Succeeded, result
 	}
-	if _, err := m.store.conn.ExecContext(context.Background(), `UPDATE delegate_jobs SET status=?, finished_at=?, result=? WHERE id=?`,
-		state, m.now().UnixMilli(), saved, id); err != nil {
+	if err := m.store.finish(context.Background(), id, saved, state, job, m.now()); err != nil {
 		m.fault = true
 	}
 }
@@ -194,7 +203,8 @@ func (m *Manager) get(ctx context.Context, id string) (Snapshot, error) {
 	if len(id) != 32 {
 		return Snapshot{}, ErrNotFound
 	}
-	return readSnapshot(m.store.conn.QueryRowContext(ctx, `SELECT `+snapshotColumns+` FROM delegate_jobs WHERE id=?`, id))
+	return readSnapshot(m.store.conn.QueryRowContext(ctx, `SELECT `+snapshotColumns+` FROM delegate_jobs j
+		LEFT JOIN review_jobs r ON r.job_id=j.id WHERE j.id=?`, id))
 }
 
 func (m *Manager) Cancel(ctx context.Context, id string) (Snapshot, error) {
@@ -225,8 +235,8 @@ func (m *Manager) List(ctx context.Context) ([]Snapshot, error) {
 	if err := m.ready(ctx); err != nil {
 		return nil, err
 	}
-	rows, err := m.store.conn.QueryContext(ctx, `SELECT id, status, created_at, started_at, finished_at, NULL
-		FROM delegate_jobs ORDER BY created_at DESC, id DESC LIMIT ?`, HistoryLimit)
+	rows, err := m.store.conn.QueryContext(ctx, `SELECT j.id, j.status, j.created_at, j.started_at, j.finished_at, NULL, r.session_id
+		FROM delegate_jobs j LEFT JOIN review_jobs r ON r.job_id=j.id ORDER BY j.created_at DESC, j.id DESC LIMIT ?`, HistoryLimit)
 	if err != nil {
 		return nil, ErrUnavailable
 	}

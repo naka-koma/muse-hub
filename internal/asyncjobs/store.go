@@ -30,9 +30,24 @@ CREATE TABLE IF NOT EXISTS policy_audit (
 	category TEXT NOT NULL,
 	level TEXT NOT NULL,
 	outcome TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS review_sessions (
+	id TEXT PRIMARY KEY,
+	revision TEXT NOT NULL,
+	used_grant INTEGER NOT NULL DEFAULT 0,
+	revoked INTEGER NOT NULL DEFAULT 0,
+	proposer_id TEXT NOT NULL,
+	reviewer_id TEXT NOT NULL,
+	completed_rounds INTEGER NOT NULL DEFAULT 0,
+	created_at INTEGER NOT NULL,
+	updated_at INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS review_jobs (
+	job_id TEXT PRIMARY KEY REFERENCES delegate_jobs(id) ON DELETE CASCADE,
+	session_id TEXT NOT NULL REFERENCES review_sessions(id)
 );`
 
-const snapshotColumns = "id, status, created_at, started_at, finished_at, result"
+const snapshotColumns = "j.id, j.status, j.created_at, j.started_at, j.finished_at, j.result, r.session_id"
 
 type store struct {
 	db   *sql.DB
@@ -59,7 +74,7 @@ func openStore(ctx context.Context, path string, now time.Time) (*store, error) 
 	s := &store{db: db, conn: conn}
 	// Keep the exclusive SQLite lock on this connection until shutdown. Another
 	// Hub must not mark this process's queued or running jobs as interrupted.
-	for _, sql := range []string{"PRAGMA locking_mode=EXCLUSIVE", "PRAGMA synchronous=FULL", schema} {
+	for _, sql := range []string{"PRAGMA locking_mode=EXCLUSIVE", "PRAGMA synchronous=FULL", "PRAGMA foreign_keys=ON", schema} {
 		if _, err := conn.ExecContext(ctx, sql); err != nil {
 			_ = s.close()
 			return nil, ErrUnavailable
@@ -90,8 +105,8 @@ func readSnapshot(row scanner) (Snapshot, error) {
 	var job Snapshot
 	var created int64
 	var started, finished sql.NullInt64
-	var result sql.NullString
-	err := row.Scan(&job.JobID, &job.Status, &created, &started, &finished, &result)
+	var result, session sql.NullString
+	err := row.Scan(&job.JobID, &job.Status, &created, &started, &finished, &result, &session)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Snapshot{}, ErrNotFound
 	}
@@ -99,6 +114,7 @@ func readSnapshot(row scanner) (Snapshot, error) {
 		return Snapshot{}, ErrUnavailable
 	}
 	job.CreatedAt = time.UnixMilli(created).UTC()
+	job.ReviewSession = session.String
 	if started.Valid {
 		timestamp := time.UnixMilli(started.Int64).UTC()
 		job.StartedAt = &timestamp
