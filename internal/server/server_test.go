@@ -19,7 +19,7 @@ const integrationToken = "0123456789abcdef0123456789abcdef"
 func TestTailscaleHost(t *testing.T) {
 	const authority = "node.example.ts.net:9443"
 	config := auth.Config{HeaderName: "Authorization", Scheme: "Bearer", Token: integrationToken}
-	srv := httptest.NewServer(NewHandler(config, authority, slog.New(slog.DiscardHandler), nil))
+	srv := httptest.NewServer(NewHandler(config, authority, slog.New(slog.DiscardHandler), Features{}))
 	defer srv.Close()
 
 	for _, tc := range []struct {
@@ -87,7 +87,7 @@ func TestAcceptanceToolsAndAuthorization(t *testing.T) {
 	var logOutput strings.Builder
 	logger := slog.New(slog.NewTextHandler(&logOutput, nil))
 	config := auth.Config{HeaderName: "Authorization", Scheme: "Bearer", Token: integrationToken}
-	httpServer := httptest.NewServer(NewHandler(config, "", logger, nil))
+	httpServer := httptest.NewServer(NewHandler(config, "", logger, Features{}))
 	defer httpServer.Close()
 
 	unauthorized, err := http.Post(httpServer.URL+"/mcp", "application/json", strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"ping","arguments":{}}}`))

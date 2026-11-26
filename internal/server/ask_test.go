@@ -44,7 +44,7 @@ func TestAskWithStubAdapter(t *testing.T) {
 	var logs strings.Builder
 	logger := slog.New(slog.NewTextHandler(&logs, nil))
 	config := auth.Config{HeaderName: "Authorization", Scheme: "Bearer", Token: integrationToken}
-	srv := httptest.NewServer(NewHandler(config, "", logger, ask))
+	srv := httptest.NewServer(NewHandler(config, "", logger, Features{Ask: ask}))
 	defer srv.Close()
 	unauthenticated, err := srv.Client().Post(srv.URL+"/mcp", "application/json", strings.NewReader(
 		`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"ask","arguments":{"task":"`+contextMarker+`"}}}`))

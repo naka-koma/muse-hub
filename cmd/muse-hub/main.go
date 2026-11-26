@@ -15,6 +15,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/nakakoma/muse-hub/internal/asyncjobs"
 	"github.com/nakakoma/muse-hub/internal/auth"
 	"github.com/nakakoma/muse-hub/internal/phase1"
 	"github.com/nakakoma/muse-hub/internal/server"
@@ -30,7 +31,7 @@ func main() {
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	var ask *tools.Ask
+	var features server.Features
 	if cfg.phase1Volume != "" {
 		startup, cancel := context.WithTimeout(ctx, 30*time.Second)
 		adapter, err := phase1.NewClaude(startup, cfg.phase1Volume)
@@ -39,11 +40,21 @@ func main() {
 			logger.Error("Phase 1 startup rejected", "error", err.Error())
 			os.Exit(1)
 		}
-		ask, err = tools.NewAsk("claude", 35*time.Second, adapter.Ask)
+		features.Ask, err = tools.NewAsk("claude", 35*time.Second, adapter.Ask)
 		if err != nil {
 			logger.Error("Phase 1 startup rejected", "error", err.Error())
 			os.Exit(1)
 		}
+	}
+	if cfg.phase2DB != "" {
+		startup, cancel := context.WithTimeout(ctx, 5*time.Second)
+		features.Jobs, err = asyncjobs.Open(startup, cfg.phase2DB, 30*time.Second)
+		cancel()
+		if err != nil {
+			logger.Error("Phase 2 startup rejected", "error", err.Error())
+			os.Exit(1)
+		}
+		defer features.Jobs.Close()
 	}
 
 	listener, err := net.Listen("tcp", listenAddress(cfg.port))
@@ -55,7 +66,7 @@ func main() {
 	logger.Info("server started", "address", listener.Addr().String(), "endpoint", "/mcp")
 
 	httpServer := &http.Server{
-		Handler:           server.NewHandler(cfg.auth, cfg.tailscaleHost, logger, ask),
+		Handler:           server.NewHandler(cfg.auth, cfg.tailscaleHost, logger, features),
 		BaseContext:       func(net.Listener) context.Context { return ctx },
 		ReadHeaderTimeout: 5 * time.Second,
 		IdleTimeout:       60 * time.Second,
@@ -77,6 +88,7 @@ type config struct {
 	port          int
 	tailscaleHost string
 	phase1Volume  string
+	phase2DB      string
 }
 
 var tailscaleDNSName = regexp.MustCompile(`(?i)^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.ts\.net$`)
@@ -124,7 +136,11 @@ func loadConfig() (config, error) {
 	if phase1Volume != "" && !phase1.ValidVolumeName(phase1Volume) {
 		return config{}, fmt.Errorf("MUSE_HUB_PHASE1_AUTH_VOLUME must be a Docker volume name")
 	}
-	return config{auth: authConfig, port: port, tailscaleHost: tailscaleHost, phase1Volume: phase1Volume}, nil
+	phase2DB := strings.TrimSpace(os.Getenv("MUSE_HUB_PHASE2_DB"))
+	if phase1Volume != "" && phase2DB != "" {
+		return config{}, errors.New("configure either Phase 1 ask or Phase 2 delegate")
+	}
+	return config{auth: authConfig, port: port, tailscaleHost: tailscaleHost, phase1Volume: phase1Volume, phase2DB: phase2DB}, nil
 }
 
 func envOr(key, fallback string) string {
