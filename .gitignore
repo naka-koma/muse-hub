@@ -1,0 +1,8 @@
+.env
+.env.*
+!.env.example
+/muse-hub.exe
+/muse-hub
+/coverage.out
+/tmp/
+/logs/
