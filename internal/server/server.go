@@ -6,16 +6,27 @@ import (
 	"strings"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/nakakoma/muse-hub/internal/asyncjobs"
 	"github.com/nakakoma/muse-hub/internal/auth"
 	"github.com/nakakoma/muse-hub/internal/jobs"
 	"github.com/nakakoma/muse-hub/internal/tools"
 )
 
-func NewHandler(authConfig auth.Config, tailscaleHost string, logger *slog.Logger, ask *tools.Ask) http.Handler {
+type Features struct {
+	Ask  *tools.Ask
+	Jobs *asyncjobs.Manager
+}
+
+func NewHandler(authConfig auth.Config, tailscaleHost string, logger *slog.Logger, features Features) http.Handler {
 	server := mcp.NewServer(&mcp.Implementation{Name: "muse-hub", Version: "0.1.0"}, nil)
-	tools.Register(server, jobs.NewManager(), logger)
-	if ask != nil {
-		ask.Register(server, logger)
+	if features.Jobs != nil {
+		tools.Register(server, nil, logger)
+		tools.RegisterDelegation(server, features.Jobs, logger)
+	} else {
+		tools.Register(server, jobs.NewManager(), logger)
+		if features.Ask != nil {
+			features.Ask.Register(server, logger)
+		}
 	}
 	mcpHandler := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return server }, nil)
 	var handler http.Handler = mcpHandler

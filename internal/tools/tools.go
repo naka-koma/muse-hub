@@ -53,6 +53,9 @@ func Register(server *mcp.Server, manager *jobs.Manager, logger *slog.Logger) {
 		logCall(logger, "echo", "allowed", "", started)
 		return nil, EchoOutput{Text: input.Text}, nil
 	})
+	if manager == nil {
+		return
+	}
 	mcp.AddTool(server, &mcp.Tool{Name: "start_dummy_job", Description: "Start a delayed in-memory dummy job (1 to 60 seconds)."}, func(_ context.Context, _ *mcp.CallToolRequest, input StartJobInput) (*mcp.CallToolResult, StartJobOutput, error) {
 		started := time.Now()
 		id, err := manager.Start(time.Duration(input.DelaySeconds) * time.Second)
