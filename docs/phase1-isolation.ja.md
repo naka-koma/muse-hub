@@ -2,7 +2,7 @@
 
 [English](phase1-isolation.md) | 日本語
 
-Dockerで隔離したClaude Codeが、ダミーの質問に回答できるかを確認します。Claudeへのログインには本人のアカウントを使い、認証情報は専用のDockerボリュームに保存します。この検証の対象はClaudeの実行環境です。
+Phase 1では、Dockerで隔離したClaude Codeがダミーの質問に回答できるかを確認します。Claudeには本人のアカウントでログインし、認証情報は専用のDockerボリュームに保存します。コンテナを単体で確認してから、Hubの `ask` を有効にできます。
 
 ## 隔離の範囲
 
@@ -16,6 +16,7 @@ Docker DesktopでLinuxコンテナとDocker Composeを使います。リポジ�
 
 ```powershell
 $phase1 = @('-p', 'muse-phase1-check', '-f', 'experiments/phase1/compose.yaml')
+docker volume create muse-phase1-claude-auth
 docker compose @phase1 build
 docker compose @phase1 run --rm -T --entrypoint node claude /opt/verify.mjs
 ```
@@ -37,4 +38,23 @@ docker compose @phase1 run --rm -T claude --print 'What is 2 + 3? Reply with onl
   --settings $phase1Settings --no-session-persistence --max-turns 1
 ```
 
-停止するには `docker compose @phase1 down` を実行します。ログイン情報も削除する場合は `docker compose @phase1 down --volumes` を使ってください。
+## Hubで `ask` を有効にする
+
+Composeのプロキシを起動したままにします。Hubを起動するPowerShellで、[README](../README.ja.md) の手順どおりにトークンを設定します。続いてログイン用のボリューム名を設定し、サーバーを起動します。
+
+```powershell
+$env:MUSE_HUB_PHASE1_AUTH_VOLUME = 'muse-phase1-claude-auth'
+go run ./cmd/muse-hub
+```
+
+Hubは待ち受けを始める前に、コンテナの隔離とClaudeのログインを確認します。起動に失敗した場合は隔離検証を再実行し、`proxy` サービスが起動しているか確認してください。既定のツールだけを使う場合は、ボリューム名を設定せずに起動します。
+
+Museで試す場合は、[Tailscale Serveの手順](usage.ja.md#tailscale-serve) に従って接続し、次の引数で `ask` を呼び出します。
+
+```json
+{"agent":"claude","task":"2 + 3","context":"","data_category":["code"]}
+```
+
+期待する結果は `{"answer":"5"}` です。Phase 1で受け付けるのはこのダミーの質問だけです。Hubは固定の質問文をClaudeに送ります。
+
+検証が終わったらHubを停止し、`docker compose @phase1 down` を実行します。ログイン情報も削除する場合は、コンテナの停止後に `docker volume rm muse-phase1-claude-auth` を実行してください。

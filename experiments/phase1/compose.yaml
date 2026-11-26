@@ -53,4 +53,6 @@ networks:
   egress: {}
 
 volumes:
-  claude-auth: {}
+  claude-auth:
+    external: true
+    name: ${MUSE_HUB_PHASE1_AUTH_VOLUME:-muse-phase1-claude-auth}

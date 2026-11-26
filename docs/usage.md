@@ -13,6 +13,7 @@ English | [日本語](usage.ja.md) | [Setup and first run](../README.md)
 | `MUSE_HUB_AUTH_SCHEME` | `Bearer` | For `Bearer`, send `Bearer <token>`. For any other value, send the token as the header value without a scheme. |
 | `MUSE_HUB_PORT` | `8787` | Local listening port, from 1 to 65535 |
 | `MUSE_HUB_TAILSCALE_HOST` | Unset | Exact Tailscale hostname to allow for Serve, with `:port` if the HTTPS port is not 443 |
+| `MUSE_HUB_PHASE1_AUTH_VOLUME` | Unset | Dedicated Docker login volume. Setting it enables the [Phase 1 `ask` check](phase1-isolation.md). |
 
 This server alone cannot determine which authentication format Muse's custom connector supports. If `Authorization: Bearer` does not work, confirm the format Muse supports and adjust the header settings accordingly.
 

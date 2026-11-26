@@ -13,6 +13,7 @@
 | `MUSE_HUB_AUTH_SCHEME` | `Bearer` | `Bearer`の場合は`Bearer <token>`。それ以外は値としてトークンだけを送信 |
 | `MUSE_HUB_PORT` | `8787` | ローカル待受ポート（1〜65535） |
 | `MUSE_HUB_TAILSCALE_HOST` | 未設定 | Serve経由の接続を許可するTailscaleのホスト名。HTTPSポートが443以外なら`:ポート番号`を付けます。 |
+| `MUSE_HUB_PHASE1_AUTH_VOLUME` | 未設定 | 専用のDockerログインボリューム。設定すると [Phase 1の `ask` 検証](phase1-isolation.ja.md) を有効にします。 |
 
 Museがカスタムコネクタでどの形式を送れるかは、このサーバーだけでは確定できません。`Authorization: Bearer`が通らない場合は、Muse側で確認した形式に合わせてヘッダー設定を変更してください。
 
