@@ -24,6 +24,17 @@ import (
 )
 
 func main() {
+	if len(os.Args) > 1 {
+		if os.Args[1] != "policy" {
+			fmt.Fprintln(os.Stderr, errPolicyUsage)
+			os.Exit(1)
+		}
+		if err := runPolicyCommand(context.Background(), os.Args[2:], os.Stdout); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		return
+	}
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 	cfg, err := loadConfig()
 	if err != nil {
@@ -57,6 +68,18 @@ func main() {
 	if cfg.phase2DB != "" {
 		startup, cancel := context.WithTimeout(ctx, 5*time.Second)
 		features.Jobs, err = asyncjobs.Open(startup, cfg.phase2DB, 30*time.Second)
+		if err == nil {
+			features.Approvals = cfg.phase5Approvals
+			if cfg.phase5Approvals {
+				features.Policy, err = features.Jobs.InitializePolicy(startup, features.Policy)
+			} else {
+				var managed bool
+				managed, err = features.Jobs.HasManagedPolicy(startup)
+				if err == nil && managed {
+					err = errors.New("managed policy database requires MUSE_HUB_PHASE5_APPROVALS=1")
+				}
+			}
+		}
 		if err == nil && features.Policy != nil {
 			err = features.Jobs.InvalidateReviewSessions(startup, features.Policy.Revision())
 		}
@@ -98,12 +121,13 @@ func main() {
 }
 
 type config struct {
-	auth          auth.Config
-	port          int
-	tailscaleHost string
-	phase1Volume  string
-	phase2DB      string
-	phase3Policy  string
+	auth            auth.Config
+	port            int
+	tailscaleHost   string
+	phase1Volume    string
+	phase2DB        string
+	phase3Policy    string
+	phase5Approvals bool
 }
 
 var tailscaleDNSName = regexp.MustCompile(`(?i)^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.ts\.net$`)
@@ -159,8 +183,15 @@ func loadConfig() (config, error) {
 	if phase3Policy != "" && phase2DB == "" {
 		return config{}, errors.New("Phase 3 policy requires the job database")
 	}
+	phase5 := strings.TrimSpace(os.Getenv("MUSE_HUB_PHASE5_APPROVALS"))
+	if phase5 != "" && phase5 != "1" {
+		return config{}, errors.New("MUSE_HUB_PHASE5_APPROVALS must be unset or 1")
+	}
+	if phase5 == "1" && phase3Policy == "" {
+		return config{}, errors.New("Phase 5 approvals require a policy configuration and job database")
+	}
 	return config{auth: authConfig, port: port, tailscaleHost: tailscaleHost, phase1Volume: phase1Volume,
-		phase2DB: phase2DB, phase3Policy: phase3Policy}, nil
+		phase2DB: phase2DB, phase3Policy: phase3Policy, phase5Approvals: phase5 == "1"}, nil
 }
 
 func envOr(key, fallback string) string {
