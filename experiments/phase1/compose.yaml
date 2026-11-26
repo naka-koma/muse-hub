@@ -1,0 +1,56 @@
+services:
+  claude:
+    build:
+      context: .
+      target: claude
+    read_only: true
+    user: '1000:1000'
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    dns: [127.0.0.1]
+    working_dir: /tmp
+    tmpfs:
+      - /tmp:rw,nosuid,nodev,mode=1777
+    volumes:
+      - claude-auth:/home/node
+    environment:
+      HOME: /home/node
+      HTTPS_PROXY: http://proxy:3128
+      CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: '1'
+      DISABLE_AUTOUPDATER: '1'
+      ENABLE_CLAUDEAI_MCP_SERVERS: 'false'
+      CLAUDE_CODE_DISABLE_ARTIFACT: '1'
+    networks:
+      - isolated
+    depends_on:
+      proxy:
+        condition: service_healthy
+
+  proxy:
+    build:
+      context: .
+      target: proxy
+    read_only: true
+    user: '1000:1000'
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    networks:
+      isolated: {}
+      egress:
+        gw_priority: 1
+    healthcheck:
+      test: ['CMD', 'node', '-e', 'fetch("http://127.0.0.1:3128").then(r => process.exit(r.status === 403 ? 0 : 1)).catch(() => process.exit(1))']
+      interval: 1s
+      timeout: 2s
+      retries: 10
+
+networks:
+  isolated:
+    internal: true
+    enable_ipv6: false
+    driver_opts:
+      com.docker.network.bridge.gateway_mode_ipv4: isolated
+  egress: {}
+
+volumes:
+  claude-auth: {}
