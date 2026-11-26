@@ -46,6 +46,7 @@ For the first run, you can also use `go run ./cmd/muse-hub`. Startup is rejected
 | `MUSE_HUB_AUTH_HEADER` | `Authorization` | Authentication header name |
 | `MUSE_HUB_AUTH_SCHEME` | `Bearer` | For `Bearer`, send `Bearer <token>`. For any other value, send the token as the header value without a scheme. |
 | `MUSE_HUB_PORT` | `8787` | Local listening port, from 1 to 65535 |
+| `MUSE_HUB_TAILSCALE_HOST` | Unset | Exact Tailscale hostname to allow for Serve, with `:port` if the HTTPS port is not 443 |
 
 This server alone cannot determine which authentication format Muse's custom connector supports. If `Authorization: Bearer` does not work, confirm the format Muse supports and adjust the header settings accordingly.
 
@@ -104,7 +105,13 @@ The following checks must be performed by the user in Muse. Codex does not perfo
 
 ### Tailscale Serve
 
-Keep the server running and execute these commands in another PowerShell window. Do not use Funnel.
+In the PowerShell window used to start the server, set `MUSE_HUB_TAILSCALE_HOST` to the hostname in the Serve URL. Omit `https://` and `/mcp`. Add `:port` for a custom HTTPS port. The following command sets the hostname for port 443:
+
+```powershell
+$env:MUSE_HUB_TAILSCALE_HOST = (tailscale status --json | ConvertFrom-Json).Self.DNSName.TrimEnd('.')
+```
+
+Start or restart the server, then execute these commands in another PowerShell window. Do not use Funnel.
 
 ```powershell
 tailscale serve --bg 8787

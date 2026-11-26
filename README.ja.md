@@ -48,6 +48,7 @@ $env:MUSE_HUB_PORT = '8787'
 | `MUSE_HUB_AUTH_HEADER` | `Authorization` | 認証ヘッダー名 |
 | `MUSE_HUB_AUTH_SCHEME` | `Bearer` | `Bearer`の場合は`Bearer <token>`。それ以外は値としてトークンだけを送信 |
 | `MUSE_HUB_PORT` | `8787` | ローカル待受ポート（1〜65535） |
+| `MUSE_HUB_TAILSCALE_HOST` | 未設定 | Serve経由の接続を許可するTailscaleのホスト名。HTTPSポートが443以外なら`:ポート番号`を付けます。 |
 
 Museがカスタムコネクタでどの形式を送れるかは、このサーバーだけでは確定できません。`Authorization: Bearer`が通らない場合は、Muse側で確認した形式に合わせてヘッダー設定を変更してください。
 
@@ -106,7 +107,13 @@ PowerShellの`Invoke-WebRequest`がレスポンスをイベントストリーム
 
 ### Tailscale Serve
 
-サーバーを起動したまま、別のPowerShellで実行します。Funnelは使わないでください。
+サーバーを起動するPowerShellで、`MUSE_HUB_TAILSCALE_HOST`にServeのURLのホスト名を設定します。`https://`や`/mcp`は省きます。HTTPSポートが443以外なら、ホスト名の後ろに`:ポート番号`を付けます。443を使う場合は、次のコマンドで設定できます。
+
+```powershell
+$env:MUSE_HUB_TAILSCALE_HOST = (tailscale status --json | ConvertFrom-Json).Self.DNSName.TrimEnd('.')
+```
+
+サーバーを起動または再起動した後、別のPowerShellで次のコマンドを実行します。Funnelは使わないでください。
 
 ```powershell
 tailscale serve --bg 8787

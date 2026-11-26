@@ -16,6 +16,56 @@ import (
 
 const integrationToken = "0123456789abcdef0123456789abcdef"
 
+func TestTailscaleHost(t *testing.T) {
+	const authority = "node.example.ts.net:9443"
+	config := auth.Config{HeaderName: "Authorization", Scheme: "Bearer", Token: integrationToken}
+	srv := httptest.NewServer(NewHandler(config, authority, slog.New(slog.DiscardHandler)))
+	defer srv.Close()
+
+	for _, tc := range []struct {
+		name, host, origin string
+		authenticated      bool
+		want               int
+	}{
+		{"localhost", "", "", true, http.StatusOK},
+		{"configured host", "NODE.example.ts.net:9443", "", true, http.StatusOK},
+		{"different host", "other.example.ts.net:9443", "", true, http.StatusForbidden},
+		{"different port", "node.example.ts.net:8443", "", true, http.StatusForbidden},
+		{"cross origin", authority, "https://other.example.ts.net", true, http.StatusForbidden},
+		{"missing token", authority, "", false, http.StatusUnauthorized},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			const init = `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"test","version":"1"}}}`
+			req, err := http.NewRequest(http.MethodPost, srv.URL+"/mcp", strings.NewReader(init))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if tc.host != "" {
+				req.Host = tc.host
+			}
+			req.Header.Set("Content-Type", "application/json")
+			req.Header.Set("Accept", "application/json, text/event-stream")
+			if tc.origin != "" {
+				req.Header.Set("Origin", tc.origin)
+			}
+			if tc.authenticated {
+				req.Header.Set("Authorization", "Bearer "+integrationToken)
+			}
+			res, err := srv.Client().Do(req)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer res.Body.Close()
+			if res.StatusCode != tc.want {
+				t.Fatalf("status=%d, want %d", res.StatusCode, tc.want)
+			}
+			if tc.want == http.StatusOK && res.Header.Get("Mcp-Session-Id") == "" {
+				t.Fatal("missing MCP session ID")
+			}
+		})
+	}
+}
+
 type headerRoundTripper struct {
 	base       http.RoundTripper
 	name       string
@@ -37,7 +87,7 @@ func TestAcceptanceToolsAndAuthorization(t *testing.T) {
 	var logOutput strings.Builder
 	logger := slog.New(slog.NewTextHandler(&logOutput, nil))
 	config := auth.Config{HeaderName: "Authorization", Scheme: "Bearer", Token: integrationToken}
-	httpServer := httptest.NewServer(NewHandler(config, logger))
+	httpServer := httptest.NewServer(NewHandler(config, "", logger))
 	defer httpServer.Close()
 
 	unauthorized, err := http.Post(httpServer.URL+"/mcp", "application/json", strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"ping","arguments":{}}}`))

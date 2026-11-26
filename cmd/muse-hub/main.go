@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"regexp"
 	"strconv"
 	"strings"
 	"syscall"
@@ -35,7 +36,7 @@ func main() {
 	logger.Info("server started", "address", listener.Addr().String(), "endpoint", "/mcp")
 
 	httpServer := &http.Server{
-		Handler:           server.NewHandler(cfg.auth, logger),
+		Handler:           server.NewHandler(cfg.auth, cfg.tailscaleHost, logger),
 		ReadHeaderTimeout: 5 * time.Second,
 		IdleTimeout:       60 * time.Second,
 	}
@@ -54,8 +55,23 @@ func main() {
 }
 
 type config struct {
-	auth auth.Config
-	port int
+	auth          auth.Config
+	port          int
+	tailscaleHost string
+}
+
+var tailscaleDNSName = regexp.MustCompile(`(?i)^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.ts\.net$`)
+
+func validTailscaleHost(value string) bool {
+	host, port, hasPort := strings.Cut(value, ":")
+	if !tailscaleDNSName.MatchString(host) {
+		return false
+	}
+	if !hasPort {
+		return true
+	}
+	n, err := strconv.Atoi(port)
+	return err == nil && n >= 1 && n <= 65535 && strconv.Itoa(n) == port
 }
 
 func listenAddress(port int) string {
@@ -81,7 +97,11 @@ func loadConfig() (config, error) {
 		}
 		port = parsed
 	}
-	return config{auth: authConfig, port: port}, nil
+	tailscaleHost := strings.TrimSpace(os.Getenv("MUSE_HUB_TAILSCALE_HOST"))
+	if tailscaleHost != "" && !validTailscaleHost(tailscaleHost) {
+		return config{}, fmt.Errorf("MUSE_HUB_TAILSCALE_HOST must be a Tailscale DNS name, optionally followed by :port")
+	}
+	return config{auth: authConfig, port: port, tailscaleHost: tailscaleHost}, nil
 }
 
 func envOr(key, fallback string) string {
