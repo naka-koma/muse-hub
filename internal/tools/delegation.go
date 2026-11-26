@@ -2,7 +2,9 @@ package tools
 
 import (
 	"context"
+	"encoding/json"
 	"log/slog"
+	"slices"
 	"strings"
 	"time"
 
@@ -33,6 +35,7 @@ func RegisterDelegation(server *mcp.Server, manager *asyncjobs.Manager, logger *
 	gate := policyGate{policy: rules, manager: manager}
 	if rules != nil {
 		gate.register(server)
+		gate.registerReview(server, logger)
 	}
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "delegate",
@@ -63,14 +66,30 @@ func RegisterDelegation(server *mcp.Server, manager *asyncjobs.Manager, logger *
 	})
 	mcp.AddTool(server, &mcp.Tool{
 		Name: "get_result", Description: "Return the status and completed result of a delegated job.",
-	}, func(ctx context.Context, _ *mcp.CallToolRequest, input DelegatedJobInput) (*mcp.CallToolResult, asyncjobs.Snapshot, error) {
+	}, func(ctx context.Context, _ *mcp.CallToolRequest, input DelegatedJobInput) (*mcp.CallToolResult, JobResultOutput, error) {
 		started := time.Now()
-		if err := gate.check(ctx, "get_result", arithmeticRead(), true); err != nil {
-			return nil, asyncjobs.Snapshot{}, err
-		}
 		job, err := manager.Get(ctx, input.JobID)
+		if err != nil {
+			logDelegation(logger, "get_result", "", started, err)
+			return nil, JobResultOutput{}, err
+		}
+		out := JobResultOutput{Snapshot: job}
+		if job.ReviewSession != "" {
+			if err := gate.checkReviewRead(ctx, "get_review_result"); err != nil {
+				return nil, JobResultOutput{}, err
+			}
+			if job.Result != nil {
+				var summary ReviewSummary
+				if err := json.Unmarshal([]byte(*job.Result), &summary); err != nil {
+					return nil, JobResultOutput{}, asyncjobs.ErrUnavailable
+				}
+				out.Result, out.Review = nil, &summary
+			}
+		} else if err := gate.check(ctx, "get_result", arithmeticRead(), true); err != nil {
+			return nil, JobResultOutput{}, err
+		}
 		logDelegation(logger, "get_result", job.JobID, started, err)
-		return nil, job, err
+		return nil, out, nil
 	})
 	mcp.AddTool(server, &mcp.Tool{
 		Name: "cancel_job", Description: "Request cancellation and return the job status once its worker has stopped.",
@@ -79,8 +98,9 @@ func RegisterDelegation(server *mcp.Server, manager *asyncjobs.Manager, logger *
 		wait, cancel := context.WithTimeout(ctx, 5*time.Second)
 		defer cancel()
 		job, err := manager.Cancel(wait, input.JobID)
-		if rules != nil {
+		if rules != nil || job.ReviewSession != "" {
 			job.Result = nil
+			job.ReviewSession = ""
 		}
 		logDelegation(logger, "cancel_job", job.JobID, started, err)
 		return nil, job, err
@@ -93,6 +113,11 @@ func RegisterDelegation(server *mcp.Server, manager *asyncjobs.Manager, logger *
 			return nil, ListJobsOutput{}, err
 		}
 		list, err := manager.List(ctx)
+		if err == nil && slices.ContainsFunc(list, func(job asyncjobs.Snapshot) bool { return job.ReviewSession != "" }) {
+			if err := gate.checkReviewRead(ctx, "list_review_jobs"); err != nil {
+				list = slices.DeleteFunc(list, func(job asyncjobs.Snapshot) bool { return job.ReviewSession != "" })
+			}
+		}
 		logDelegation(logger, "list_jobs", "", started, err)
 		return nil, ListJobsOutput{Jobs: list}, err
 	})

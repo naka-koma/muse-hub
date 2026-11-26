@@ -33,3 +33,5 @@ Resource names are logical aliases. They cannot grant filesystem access. `consul
 Call `delegate` as in the Phase 2 guide, then try an unknown category or `work`. Both calls should be denied. Use a fresh `request_id` for a new job. With `read: false`, an otherwise valid result is withheld after the Hub restarts. Cancellation remains available and returns status without the answer.
 
 `list_policy` returns the effective settings, a revision ID, and aggregate audit counts. The database records the timestamp, operation, revision, known category and disclosure level when available, and decision. It omits request text, results, and raw unknown category names from the audit table. The audit count can span multiple revisions.
+
+See [Phase 4 sessions and review](phase4-review.md) to check the same policy on transfers between dummy adapters.
