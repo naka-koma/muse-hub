@@ -16,7 +16,9 @@ import (
 	"time"
 
 	"github.com/nakakoma/muse-hub/internal/auth"
+	"github.com/nakakoma/muse-hub/internal/phase1"
 	"github.com/nakakoma/muse-hub/internal/server"
+	"github.com/nakakoma/muse-hub/internal/tools"
 )
 
 func main() {
@@ -25,6 +27,23 @@ func main() {
 	if err != nil {
 		logger.Error("configuration rejected", "error", err.Error())
 		os.Exit(1)
+	}
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	var ask *tools.Ask
+	if cfg.phase1Volume != "" {
+		startup, cancel := context.WithTimeout(ctx, 30*time.Second)
+		adapter, err := phase1.NewClaude(startup, cfg.phase1Volume)
+		cancel()
+		if err != nil {
+			logger.Error("Phase 1 startup rejected", "error", err.Error())
+			os.Exit(1)
+		}
+		ask, err = tools.NewAsk("claude", 35*time.Second, adapter.Ask)
+		if err != nil {
+			logger.Error("Phase 1 startup rejected", "error", err.Error())
+			os.Exit(1)
+		}
 	}
 
 	listener, err := net.Listen("tcp", listenAddress(cfg.port))
@@ -36,15 +55,14 @@ func main() {
 	logger.Info("server started", "address", listener.Addr().String(), "endpoint", "/mcp")
 
 	httpServer := &http.Server{
-		Handler:           server.NewHandler(cfg.auth, cfg.tailscaleHost, logger),
+		Handler:           server.NewHandler(cfg.auth, cfg.tailscaleHost, logger, ask),
+		BaseContext:       func(net.Listener) context.Context { return ctx },
 		ReadHeaderTimeout: 5 * time.Second,
 		IdleTimeout:       60 * time.Second,
 	}
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
 	go func() {
 		<-ctx.Done()
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 6*time.Second)
 		defer cancel()
 		_ = httpServer.Shutdown(shutdownCtx)
 	}()
@@ -58,6 +76,7 @@ type config struct {
 	auth          auth.Config
 	port          int
 	tailscaleHost string
+	phase1Volume  string
 }
 
 var tailscaleDNSName = regexp.MustCompile(`(?i)^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.ts\.net$`)
@@ -101,7 +120,11 @@ func loadConfig() (config, error) {
 	if tailscaleHost != "" && !validTailscaleHost(tailscaleHost) {
 		return config{}, fmt.Errorf("MUSE_HUB_TAILSCALE_HOST must be a Tailscale DNS name, optionally followed by :port")
 	}
-	return config{auth: authConfig, port: port, tailscaleHost: tailscaleHost}, nil
+	phase1Volume := os.Getenv("MUSE_HUB_PHASE1_AUTH_VOLUME")
+	if phase1Volume != "" && !phase1.ValidVolumeName(phase1Volume) {
+		return config{}, fmt.Errorf("MUSE_HUB_PHASE1_AUTH_VOLUME must be a Docker volume name")
+	}
+	return config{auth: authConfig, port: port, tailscaleHost: tailscaleHost, phase1Volume: phase1Volume}, nil
 }
 
 func envOr(key, fallback string) string {

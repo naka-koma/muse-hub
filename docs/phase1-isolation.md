@@ -2,7 +2,7 @@
 
 English | [日本語](phase1-isolation.ja.md)
 
-This experiment checks whether Claude Code can answer a synthetic question from an isolated Docker container. It uses the operator's own Claude sign-in in a dedicated Docker volume. The Hub and Muse are outside this experiment.
+Phase 1 checks whether Claude Code can answer a synthetic question from an isolated Docker container. It uses the operator's own Claude sign-in in a dedicated Docker volume. You can first check the container on its own, then enable `ask` in the Hub.
 
 ## Boundary
 
@@ -16,6 +16,7 @@ Use Docker Desktop with Linux containers and Docker Compose. Open PowerShell 7 i
 
 ```powershell
 $phase1 = @('-p', 'muse-phase1-check', '-f', 'experiments/phase1/compose.yaml')
+docker volume create muse-phase1-claude-auth
 docker compose @phase1 build
 docker compose @phase1 run --rm -T --entrypoint node claude /opt/verify.mjs
 ```
@@ -37,4 +38,23 @@ docker compose @phase1 run --rm -T claude --print 'What is 2 + 3? Reply with onl
   --settings $phase1Settings --no-session-persistence --max-turns 1
 ```
 
-Stop the experiment with `docker compose @phase1 down`. Use `docker compose @phase1 down --volumes` if you also want to delete its saved sign-in.
+## Enable `ask` in the Hub
+
+Keep the Compose proxy running. In the PowerShell session that starts the Hub, set the token as described in the [README](../README.md), then set the name of the login volume and start the server.
+
+```powershell
+$env:MUSE_HUB_PHASE1_AUTH_VOLUME = 'muse-phase1-claude-auth'
+go run ./cmd/muse-hub
+```
+
+The Hub checks the container boundary and the Claude login before listening. If a check fails, run the isolation check again and confirm that the `proxy` service is running. Leave the volume setting unset for the default tools.
+
+To test with Muse, follow the [Tailscale Serve setup](usage.md#tailscale-serve) and call `ask` with these arguments:
+
+```json
+{"agent":"claude","task":"2 + 3","context":"","data_category":["code"]}
+```
+
+The expected result is `{"answer":"5"}`. Phase 1 accepts only this synthetic request. The Hub sends a fixed prompt to Claude.
+
+When finished, stop the Hub and run `docker compose @phase1 down`. To remove the saved sign-in as well, run `docker volume rm muse-phase1-claude-auth` after the containers stop.

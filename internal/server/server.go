@@ -11,9 +11,12 @@ import (
 	"github.com/nakakoma/muse-hub/internal/tools"
 )
 
-func NewHandler(authConfig auth.Config, tailscaleHost string, logger *slog.Logger) http.Handler {
+func NewHandler(authConfig auth.Config, tailscaleHost string, logger *slog.Logger, ask *tools.Ask) http.Handler {
 	server := mcp.NewServer(&mcp.Implementation{Name: "muse-hub", Version: "0.1.0"}, nil)
 	tools.Register(server, jobs.NewManager(), logger)
+	if ask != nil {
+		ask.Register(server, logger)
+	}
 	mcpHandler := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return server }, nil)
 	var handler http.Handler = mcpHandler
 	if tailscaleHost != "" {

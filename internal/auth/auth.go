@@ -69,7 +69,7 @@ func requestToolName(r *http.Request) string {
 		return ""
 	}
 	switch request.Params.Name {
-	case "ping", "echo", "start_dummy_job", "get_result":
+	case "ping", "echo", "start_dummy_job", "get_result", "ask":
 		return request.Params.Name
 	default:
 		return ""
