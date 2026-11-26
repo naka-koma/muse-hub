@@ -8,6 +8,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/nakakoma/muse-hub/internal/asyncjobs"
+	"github.com/nakakoma/muse-hub/internal/policy"
 )
 
 type DelegateInput struct {
@@ -17,6 +18,7 @@ type DelegateInput struct {
 	DataCategory []string `json:"data_category" jsonschema:"use [code] for the Phase 2 probe"`
 	RequestID    string   `json:"request_id" jsonschema:"a unique ID for the request; reuse it only when retrying the same request"`
 	Session      string   `json:"session,omitempty" jsonschema:"optional session ID; only one job can run in a session at a time"`
+	Resource     string   `json:"resource,omitempty" jsonschema:"optional resource alias; use arithmetic for the synthetic probe"`
 }
 
 type DelegatedJobInput struct {
@@ -27,14 +29,29 @@ type ListJobsOutput struct {
 	Jobs []asyncjobs.Snapshot `json:"jobs"`
 }
 
-func RegisterDelegation(server *mcp.Server, manager *asyncjobs.Manager, logger *slog.Logger) {
+func RegisterDelegation(server *mcp.Server, manager *asyncjobs.Manager, logger *slog.Logger, rules *policy.Policy) {
+	gate := policyGate{policy: rules, manager: manager}
+	if rules != nil {
+		gate.register(server)
+	}
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "delegate",
 		Description: "Start a persisted asynchronous Phase 2 dummy job and return its ID. Use agent dummy, task 2 + 3, empty context, and data_category [code].",
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, input DelegateInput) (*mcp.CallToolResult, StartJobOutput, error) {
 		started := time.Now()
-		if input.Agent != "dummy" || strings.TrimSpace(input.Task) != "2 + 3" || input.Context != "" ||
-			len(input.DataCategory) != 1 || input.DataCategory[0] != "code" {
+		resource := input.Resource
+		if resource == "" {
+			resource = arithmeticResource
+		}
+		verified := input.Agent == "dummy" && strings.TrimSpace(input.Task) == "2 + 3" && input.Context == "" &&
+			len(input.DataCategory) == 1 && input.DataCategory[0] == "code" && resource == arithmeticResource
+		if err := gate.check(ctx, "delegate", policy.Access{
+			Agent: input.Agent, Operation: "consult", Resource: resource,
+			Portions: []policy.Portion{{Categories: input.DataCategory, Level: policy.Full}},
+		}, verified); err != nil {
+			return nil, StartJobOutput{}, err
+		}
+		if !verified {
 			logCall(logger, "delegate", "rejected", "", started)
 			return nil, StartJobOutput{}, asyncjobs.ErrInvalidInput
 		}
@@ -48,6 +65,9 @@ func RegisterDelegation(server *mcp.Server, manager *asyncjobs.Manager, logger *
 		Name: "get_result", Description: "Return the status and completed result of a delegated job.",
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, input DelegatedJobInput) (*mcp.CallToolResult, asyncjobs.Snapshot, error) {
 		started := time.Now()
+		if err := gate.check(ctx, "get_result", arithmeticRead(), true); err != nil {
+			return nil, asyncjobs.Snapshot{}, err
+		}
 		job, err := manager.Get(ctx, input.JobID)
 		logDelegation(logger, "get_result", job.JobID, started, err)
 		return nil, job, err
@@ -59,6 +79,9 @@ func RegisterDelegation(server *mcp.Server, manager *asyncjobs.Manager, logger *
 		wait, cancel := context.WithTimeout(ctx, 5*time.Second)
 		defer cancel()
 		job, err := manager.Cancel(wait, input.JobID)
+		if rules != nil {
+			job.Result = nil
+		}
 		logDelegation(logger, "cancel_job", job.JobID, started, err)
 		return nil, job, err
 	})
@@ -66,6 +89,9 @@ func RegisterDelegation(server *mcp.Server, manager *asyncjobs.Manager, logger *
 		Name: "list_jobs", Description: "Return the latest 100 delegated job summaries without their result bodies.",
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, _ struct{}) (*mcp.CallToolResult, ListJobsOutput, error) {
 		started := time.Now()
+		if err := gate.check(ctx, "list_jobs", arithmeticRead(), true); err != nil {
+			return nil, ListJobsOutput{}, err
+		}
 		list, err := manager.List(ctx)
 		logDelegation(logger, "list_jobs", "", started, err)
 		return nil, ListJobsOutput{Jobs: list}, err

@@ -18,6 +18,7 @@ import (
 	"github.com/nakakoma/muse-hub/internal/asyncjobs"
 	"github.com/nakakoma/muse-hub/internal/auth"
 	"github.com/nakakoma/muse-hub/internal/phase1"
+	"github.com/nakakoma/muse-hub/internal/policy"
 	"github.com/nakakoma/muse-hub/internal/server"
 	"github.com/nakakoma/muse-hub/internal/tools"
 )
@@ -32,6 +33,13 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	var features server.Features
+	if cfg.phase3Policy != "" {
+		features.Policy, err = policy.Load(cfg.phase3Policy)
+		if err != nil {
+			logger.Error("Phase 3 startup rejected", "error", err.Error())
+			os.Exit(1)
+		}
+	}
 	if cfg.phase1Volume != "" {
 		startup, cancel := context.WithTimeout(ctx, 30*time.Second)
 		adapter, err := phase1.NewClaude(startup, cfg.phase1Volume)
@@ -89,6 +97,7 @@ type config struct {
 	tailscaleHost string
 	phase1Volume  string
 	phase2DB      string
+	phase3Policy  string
 }
 
 var tailscaleDNSName = regexp.MustCompile(`(?i)^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.ts\.net$`)
@@ -140,7 +149,12 @@ func loadConfig() (config, error) {
 	if phase1Volume != "" && phase2DB != "" {
 		return config{}, errors.New("configure either Phase 1 ask or Phase 2 delegate")
 	}
-	return config{auth: authConfig, port: port, tailscaleHost: tailscaleHost, phase1Volume: phase1Volume, phase2DB: phase2DB}, nil
+	phase3Policy := strings.TrimSpace(os.Getenv("MUSE_HUB_PHASE3_POLICY"))
+	if phase3Policy != "" && phase2DB == "" {
+		return config{}, errors.New("Phase 3 policy requires the job database")
+	}
+	return config{auth: authConfig, port: port, tailscaleHost: tailscaleHost, phase1Volume: phase1Volume,
+		phase2DB: phase2DB, phase3Policy: phase3Policy}, nil
 }
 
 func envOr(key, fallback string) string {

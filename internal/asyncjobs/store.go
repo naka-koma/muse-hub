@@ -21,7 +21,16 @@ const schema = `CREATE TABLE IF NOT EXISTS delegate_jobs (
 	result TEXT
 );
 CREATE INDEX IF NOT EXISTS delegate_jobs_history ON delegate_jobs(created_at DESC, id DESC);
-CREATE INDEX IF NOT EXISTS delegate_jobs_retention ON delegate_jobs(finished_at);`
+CREATE INDEX IF NOT EXISTS delegate_jobs_retention ON delegate_jobs(finished_at);
+CREATE TABLE IF NOT EXISTS policy_audit (
+	id INTEGER PRIMARY KEY,
+	timestamp INTEGER NOT NULL,
+	event TEXT NOT NULL,
+	revision TEXT NOT NULL,
+	category TEXT NOT NULL,
+	level TEXT NOT NULL,
+	outcome TEXT NOT NULL
+);`
 
 const snapshotColumns = "id, status, created_at, started_at, finished_at, result"
 
