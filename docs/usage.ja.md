@@ -18,7 +18,10 @@
 | `MUSE_HUB_CODEX_EXE` | 未設定 | [Codexへの委譲検証](jobs.ja.md#windowsでcodexへの委譲を確認する) に使うWindows版 `codex.exe` の絶対パス。 |
 | `MUSE_HUB_CODEX_HOME` | 未設定 | Codex専用ログインディレクトリの絶対パス。実行ファイルとジョブDBの設定も必要です。 |
 | `MUSE_HUB_CODEX_TEXT` | 未設定 | ポリシーを読み込んでいないHubで `1` を指定すると、[文章や文脈をCodexに送れます](jobs.ja.md#文章や文脈をcodexに送る)。 |
+| `MUSE_HUB_CLAUDE_BACKEND` | 設定がそろっている方式を選択 | [Claudeの起動方式](jobs.ja.md#claudeに委譲する) を `docker` または `native` で指定します。両方を準備した場合は指定が必要です。 |
 | `MUSE_HUB_CLAUDE_AUTH_VOLUME` | 未設定 | [Claudeへの非同期委譲](jobs.ja.md#claudeに委譲する) に使う専用Dockerログインボリューム。ジョブDBの設定も必要です。 |
+| `MUSE_HUB_CLAUDE_EXE` | 未設定 | Windows版 `claude.exe` の絶対パス。ジョブDBと専用プロファイルの設定も必要です。 |
+| `MUSE_HUB_CLAUDE_CONFIG_DIR` | 未設定 | Windows版Claudeの専用ログインディレクトリの絶対パス。 |
 | `MUSE_HUB_CLAUDE_TEXT` | 未設定 | ポリシーを読み込んでいないHubで `1` を指定すると、文章や文脈をClaudeに送れます。 |
 | `MUSE_HUB_CLAUDE_ASK_VOLUME` | 未設定 | [`ask` の同期応答を確認する](claude-isolation.ja.md#ask-で同期応答を確認する) ときに使う専用ボリューム。ジョブDBは未設定にします。 |
 | `MUSE_HUB_POLICY_FILE` | 未設定 | [開示ポリシーと監査](policy.ja.md) に使うYAMLのパス。ジョブDBの設定も必要です。 |

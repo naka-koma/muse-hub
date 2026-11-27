@@ -88,16 +88,16 @@ func main() {
 			}
 		}
 		features.CodexText = cfg.codexText
-		if cfg.claudeVolume != "" {
+		if cfg.claudeBackend != "" {
 			startup, cancel := context.WithTimeout(ctx, 20*time.Second)
-			adapter, err := claude.NewClaude(startup, cfg.claudeVolume)
+			claudeRunner, err := cfg.claudeRunner(startup)
 			cancel()
 			if err != nil {
 				logger.Error("Claude startup rejected", "error", err.Error())
 				os.Exit(1)
 			}
 			features.ClaudeRunner = func(ctx context.Context, task, reference string) (string, error) {
-				result, err := adapter.Run(ctx, task, reference)
+				result, err := claudeRunner(ctx, task, reference)
 				if err != nil && ctx.Err() == nil {
 					logger.Warn("Claude job failed", "stage", err.Error())
 				}
@@ -170,6 +170,9 @@ type config struct {
 	codexHome       string
 	codexText       bool
 	claudeVolume    string
+	claudeBackend   string
+	claudeExe       string
+	claudeConfigDir string
 	claudeText      bool
 	policyFile      string
 	policyApprovals bool
@@ -253,11 +256,14 @@ func loadConfig() (config, error) {
 		return config{}, errors.New("MUSE_HUB_CODEX_TEXT requires configured Codex delegation and must be unset or 1")
 	}
 	claudeVolume := strings.TrimSpace(os.Getenv("MUSE_HUB_CLAUDE_AUTH_VOLUME"))
-	if claudeVolume != "" && (!claude.ValidVolumeName(claudeVolume) || jobsDB == "") {
-		return config{}, errors.New("Claude delegation requires a Docker login volume name and the job database")
+	claudeExe := strings.TrimSpace(os.Getenv("MUSE_HUB_CLAUDE_EXE"))
+	claudeConfigDir := strings.TrimSpace(os.Getenv("MUSE_HUB_CLAUDE_CONFIG_DIR"))
+	claudeBackend, err := selectClaudeBackend(strings.TrimSpace(os.Getenv("MUSE_HUB_CLAUDE_BACKEND")), claudeVolume, claudeExe, claudeConfigDir, jobsDB)
+	if err != nil {
+		return config{}, err
 	}
 	claudeText := strings.TrimSpace(os.Getenv("MUSE_HUB_CLAUDE_TEXT"))
-	if claudeText != "" && (claudeText != "1" || claudeVolume == "") {
+	if claudeText != "" && (claudeText != "1" || claudeBackend == "") {
 		return config{}, errors.New("MUSE_HUB_CLAUDE_TEXT requires configured Claude delegation and must be unset or 1")
 	}
 	policyFile, err := settingWithAlias("MUSE_HUB_POLICY_FILE", "MUSE_HUB_PHASE3_POLICY")
@@ -279,8 +285,52 @@ func loadConfig() (config, error) {
 	}
 	return config{auth: authConfig, port: port, tailscaleHost: tailscaleHost, claudeAskVolume: askVolume,
 		jobsDB: jobsDB, dummySubprocess: dummySubprocess == "1", codexExe: codexExe, codexHome: codexHome, codexText: codexText == "1",
-		claudeVolume: claudeVolume, claudeText: claudeText == "1",
+		claudeBackend: claudeBackend, claudeVolume: claudeVolume, claudeExe: claudeExe,
+		claudeConfigDir: claudeConfigDir, claudeText: claudeText == "1",
 		policyFile: policyFile, policyApprovals: approvals == "1"}, nil
+}
+
+func selectClaudeBackend(backend, volume, executable, profile, jobsDB string) (string, error) {
+	if backend == "" {
+		nativeSettings := executable != "" || profile != ""
+		switch {
+		case volume != "" && nativeSettings:
+			return "", errors.New("set MUSE_HUB_CLAUDE_BACKEND to docker or native to choose between the configured Claude backends")
+		case volume != "":
+			backend = "docker"
+		case nativeSettings:
+			backend = "native"
+		default:
+			return "", nil
+		}
+	}
+	switch backend {
+	case "docker":
+		if !claude.ValidVolumeName(volume) {
+			return "", errors.New("the Docker Claude backend requires a valid MUSE_HUB_CLAUDE_AUTH_VOLUME")
+		}
+	case "native":
+		if !dummyworker.Supported || executable == "" || profile == "" {
+			return "", errors.New("the native Claude backend requires Windows, MUSE_HUB_CLAUDE_EXE, and MUSE_HUB_CLAUDE_CONFIG_DIR")
+		}
+	default:
+		return "", errors.New("MUSE_HUB_CLAUDE_BACKEND must be unset, docker, or native")
+	}
+	if jobsDB == "" {
+		return "", errors.New("Claude delegation requires MUSE_HUB_JOBS_DB")
+	}
+	return backend, nil
+}
+
+func (cfg config) claudeRunner(ctx context.Context) (func(context.Context, string, string) (string, error), error) {
+	if cfg.claudeBackend == "native" {
+		return dummyworker.NewNativeClaude(ctx, cfg.claudeExe, cfg.claudeConfigDir)
+	}
+	adapter, err := claude.NewClaude(ctx, cfg.claudeVolume)
+	if err != nil {
+		return nil, err
+	}
+	return adapter.Run, nil
 }
 
 func jobsDBSetting() (string, error) {

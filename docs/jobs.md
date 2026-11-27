@@ -55,6 +55,33 @@ Submit only text you can share with Codex. The CLI gets the text over standard i
 
 ## Delegate to Claude
 
-Prepare the [isolated Claude container](claude-isolation.md) and keep its Compose proxy running. To enable asynchronous Claude jobs, configure `MUSE_HUB_CLAUDE_AUTH_VOLUME` and the job database. Set `MUSE_HUB_CLAUDE_TEXT=1` to allow tasks and context on a Hub without a disclosure policy. The input and output limits are the same as for Codex. Claude runs one job at a time.
+Set `MUSE_HUB_JOBS_DB` and choose how to run Claude. You can omit `MUSE_HUB_CLAUDE_BACKEND` when you configure only one backend.
 
-Use `agent: "claude"` with `delegate`, then pass its job ID to `get_result`. The adapter sends prompts over standard input, disables Claude's tools and connectors, and removes the job container when finished or cancelled.
+### Run Claude in Docker
+
+Prepare the [isolated Claude container](claude-isolation.md) and keep its Compose proxy running. To launch the Hub, set `MUSE_HUB_CLAUDE_BACKEND=docker` and set `MUSE_HUB_CLAUDE_AUTH_VOLUME` to the dedicated login volume.
+
+### Run the Windows CLI with a dedicated profile
+
+Use a Claude Code release that supports `--restricted` and `--safe-mode`. In a separate PowerShell session, create a dedicated directory and sign in.
+
+```powershell
+$claudeProfile = Join-Path $env:LOCALAPPDATA 'MuseHub\claude-profile'
+New-Item -ItemType Directory -Path $claudeProfile -Force | Out-Null
+$env:CLAUDE_CONFIG_DIR = $claudeProfile
+claude auth login --claudeai
+```
+
+Set these variables in the PowerShell session that starts the Hub.
+
+```powershell
+$env:MUSE_HUB_CLAUDE_BACKEND = 'native'
+$env:MUSE_HUB_CLAUDE_EXE = (Get-Command claude.exe).Source
+$env:MUSE_HUB_CLAUDE_CONFIG_DIR = Join-Path $env:LOCALAPPDATA 'MuseHub\claude-profile'
+```
+
+The CLI runs with the Windows user's permissions. Choose Docker if you need a separate filesystem and restricted network routing.
+
+### Submit a Claude job
+
+Use `agent: "claude"` with `delegate`, then pass its job ID to `get_result`. Both backends send prompts over standard input and disable tools and connectors. Set `MUSE_HUB_CLAUDE_TEXT=1` to allow tasks and context when the Hub has no disclosure policy. Claude uses the same input and output limits as Codex and runs one job at a time.

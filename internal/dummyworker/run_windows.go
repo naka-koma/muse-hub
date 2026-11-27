@@ -67,6 +67,8 @@ func Command(args []string) (int, bool) {
 		return runDummyParent(args[1], leafArg), true
 	case len(args) == 6 && args[0] == codexParentArg:
 		return runCodexParent(args[5], args[1], args[2], args[3], args[4]), true
+	case len(args) == 6 && args[0] == claudeParentArg:
+		return runClaudeParent(args[5], args[1], args[2], args[3], args[4]), true
 	case len(args) == 1 && args[0] == leafArg:
 		time.Sleep(5 * time.Second)
 		return 2 + 3, true

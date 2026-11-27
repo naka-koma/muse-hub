@@ -18,7 +18,10 @@ English | [日本語](usage.ja.md) | [Setup and first run](../README.md)
 | `MUSE_HUB_CODEX_EXE` | Unset | Absolute path to the native Windows Codex executable for the [Codex probe](jobs.md#check-codex-delegation-on-windows). |
 | `MUSE_HUB_CODEX_HOME` | Unset | Absolute path to the dedicated Codex login directory. Requires the executable and the job database. |
 | `MUSE_HUB_CODEX_TEXT` | Unset | Set to `1` to [enable text requests and context](jobs.md#send-text-and-context-to-codex) when no disclosure policy is loaded. |
+| `MUSE_HUB_CLAUDE_BACKEND` | Selects the only configured backend | Set to `docker` or `native` to [choose how Claude runs](jobs.md#delegate-to-claude). Required if both backends are configured. |
 | `MUSE_HUB_CLAUDE_AUTH_VOLUME` | Unset | Dedicated Docker login volume for [asynchronous Claude jobs](jobs.md#delegate-to-claude). Requires the job database. |
+| `MUSE_HUB_CLAUDE_EXE` | Unset | Absolute path to the native Windows `claude.exe`. Requires the job database and the dedicated profile. |
+| `MUSE_HUB_CLAUDE_CONFIG_DIR` | Unset | Absolute path to Claude's dedicated Windows login directory. |
 | `MUSE_HUB_CLAUDE_TEXT` | Unset | Set to `1` to accept text requests and context for Claude when no disclosure policy is loaded. |
 | `MUSE_HUB_CLAUDE_ASK_VOLUME` | Unset | Dedicated Docker login volume for the optional [synchronous `ask` check](claude-isolation.md#optional-synchronous-check-with-ask). Requires the job database setting to be unset. |
 | `MUSE_HUB_POLICY_FILE` | Unset | Local YAML path for the [disclosure policy and audit](policy.md). Requires the job database. |
