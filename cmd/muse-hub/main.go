@@ -74,12 +74,20 @@ func main() {
 			features.DelegateRunner = dummyworker.Run
 		}
 		if cfg.codexExe != "" {
-			features.CodexRunner, err = dummyworker.NewCodex(cfg.codexExe, cfg.codexHome)
+			codexRunner, err := dummyworker.NewCodex(cfg.codexExe, cfg.codexHome)
 			if err != nil {
 				logger.Error("Codex startup rejected", "error", err.Error())
 				os.Exit(1)
 			}
+			features.CodexRunner = func(ctx context.Context, task, reference string) (string, error) {
+				result, err := codexRunner(ctx, task, reference)
+				if err != nil && ctx.Err() == nil {
+					logger.Warn("Codex job failed", "stage", err.Error())
+				}
+				return result, err
+			}
 		}
+		features.CodexText = cfg.codexText
 		startup, cancel := context.WithTimeout(ctx, 5*time.Second)
 		features.Jobs, err = asyncjobs.Open(startup, cfg.phase2DB, 30*time.Second)
 		if err == nil {
@@ -143,6 +151,7 @@ type config struct {
 	phase2Subprocess bool
 	codexExe         string
 	codexHome        string
+	codexText        bool
 	phase3Policy     string
 	phase5Approvals  bool
 }
@@ -211,6 +220,10 @@ func loadConfig() (config, error) {
 	if codexExe != "" && (phase2DB == "" || !dummyworker.Supported) {
 		return config{}, errors.New("Codex delegation requires Windows and the job database")
 	}
+	codexText := strings.TrimSpace(os.Getenv("MUSE_HUB_CODEX_TEXT"))
+	if codexText != "" && (codexText != "1" || codexExe == "") {
+		return config{}, errors.New("MUSE_HUB_CODEX_TEXT requires configured Codex delegation and must be unset or 1")
+	}
 	phase3Policy := strings.TrimSpace(os.Getenv("MUSE_HUB_PHASE3_POLICY"))
 	if phase3Policy != "" && phase2DB == "" {
 		return config{}, errors.New("Phase 3 policy requires the job database")
@@ -223,7 +236,7 @@ func loadConfig() (config, error) {
 		return config{}, errors.New("Phase 5 approvals require a policy configuration and job database")
 	}
 	return config{auth: authConfig, port: port, tailscaleHost: tailscaleHost, phase1Volume: phase1Volume,
-		phase2DB: phase2DB, phase2Subprocess: phase2Subprocess == "1", codexExe: codexExe, codexHome: codexHome,
+		phase2DB: phase2DB, phase2Subprocess: phase2Subprocess == "1", codexExe: codexExe, codexHome: codexHome, codexText: codexText == "1",
 		phase3Policy: phase3Policy, phase5Approvals: phase5 == "1"}, nil
 }
 

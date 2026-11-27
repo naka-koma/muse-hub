@@ -14,6 +14,6 @@ func Run(context.Context) (string, error) {
 }
 func Command([]string) (int, bool) { return 0, false }
 
-func NewCodex(string, string) (func(context.Context) (string, error), error) {
+func NewCodex(string, string) (func(context.Context, string, string) (string, error), error) {
 	return nil, errors.New("the Codex probe requires Windows")
 }

@@ -42,3 +42,13 @@ Submit the fixture with a fresh `request_id` and call `cancel_job` with the retu
 Create a dedicated Codex home outside the repository and sign in to Codex there. Use `codex login` with `CODEX_HOME` set to that directory in a separate PowerShell session. Set `MUSE_HUB_CODEX_HOME` to the same directory and `MUSE_HUB_CODEX_EXE` to the absolute path to the native `codex.exe` before starting the Hub with the job database.
 
 Call `delegate` with `agent: "codex"`, `task: "2 + 3"`, empty `context`, `data_category: ["code"]`, and a fresh `request_id`. Use the returned ID with `get_result` and expect `succeeded` with result `"5"`. The Hub sends a fixed arithmetic prompt, runs Codex with tools such as shell and web search disabled, and accepts only the expected answer. When using a policy, allow the `code` category and `arithmetic` resource for Codex.
+
+### Send text and context to Codex
+
+With Codex configured, set `MUSE_HUB_CODEX_TEXT=1` before starting a Hub with no disclosure policy. Submit a nonempty `task` of up to 4 KiB and optional reference `context` of up to 16 KiB, measured in UTF-8 bytes. Keep `data_category: ["code"]` and use a fresh `request_id` when either field changes.
+
+```json
+{"agent":"codex","task":"Summarize the context in one sentence.","context":"The sample build took 2 minutes. The previous build took 5 minutes.","data_category":["code"],"request_id":"summary-1"}
+```
+
+Submit only text you can share with Codex. The CLI gets the text over standard input and uses the same restricted tool setup as the arithmetic check. The Hub saves the reply for `get_result`, with a limit of 16 KiB. A Hub with a disclosure policy accepts only the fixed probe and withholds results from earlier free-text requests.

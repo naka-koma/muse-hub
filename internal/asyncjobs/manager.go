@@ -52,13 +52,15 @@ type Snapshot struct {
 	Result        *string    `json:"result,omitempty"`
 	ReviewSession string     `json:"session_id,omitempty"`
 	Agent         string     `json:"-"`
+	Unverified    bool       `json:"-"`
 }
 
 type Submission struct {
-	RequestID string
-	Session   string
-	WorkKey   string
-	Agent     string
+	RequestID  string
+	Session    string
+	WorkKey    string
+	Agent      string
+	Unverified bool
 	// Run must return only after its work has stopped, or report ErrStopUnconfirmed.
 	Run func(context.Context) (string, error)
 }
@@ -120,8 +122,8 @@ func (m *Manager) Submit(ctx context.Context, input Submission) (string, error) 
 	if err != nil {
 		return "", err
 	}
-	if _, err := m.store.conn.ExecContext(ctx, `INSERT INTO delegate_jobs(id, request_key, fingerprint, status, created_at, agent)
-		VALUES (?, ?, ?, 'queued', ?, ?)`, id, requestKey[:], fingerprint[:], m.now().UnixMilli(), input.Agent); err != nil {
+	if _, err := m.store.conn.ExecContext(ctx, `INSERT INTO delegate_jobs(id, request_key, fingerprint, status, created_at, agent, unverified)
+		VALUES (?, ?, ?, 'queued', ?, ?, ?)`, id, requestKey[:], fingerprint[:], m.now().UnixMilli(), input.Agent, input.Unverified); err != nil {
 		return "", ErrUnavailable
 	}
 	m.start(id, input.Session, 0, input.Run)
@@ -243,7 +245,7 @@ func (m *Manager) List(ctx context.Context) ([]Snapshot, error) {
 	if err := m.ready(ctx); err != nil {
 		return nil, err
 	}
-	rows, err := m.store.conn.QueryContext(ctx, `SELECT j.id, j.status, j.created_at, j.started_at, j.finished_at, NULL, r.session_id, j.agent
+	rows, err := m.store.conn.QueryContext(ctx, `SELECT j.id, j.status, j.created_at, j.started_at, j.finished_at, NULL, r.session_id, j.agent, j.unverified
 		FROM delegate_jobs j LEFT JOIN review_jobs r ON r.job_id=j.id ORDER BY j.created_at DESC, j.id DESC LIMIT ?`, HistoryLimit)
 	if err != nil {
 		return nil, ErrUnavailable

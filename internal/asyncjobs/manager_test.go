@@ -208,7 +208,9 @@ func TestCodexAgentPersistsAlongsideLegacyJobs(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, alterErr := db.ExecContext(t.Context(), "ALTER TABLE delegate_jobs DROP COLUMN agent")
+	_, alterErr := db.ExecContext(t.Context(), `ALTER TABLE delegate_jobs DROP COLUMN agent;
+		ALTER TABLE delegate_jobs DROP COLUMN unverified;
+		ALTER TABLE delegate_jobs DROP COLUMN codex_text_result;`)
 	if err := errors.Join(alterErr, db.Close()); err != nil {
 		t.Fatal(err)
 	}
@@ -225,5 +227,13 @@ func TestCodexAgentPersistsAlongsideLegacyJobs(t *testing.T) {
 	})
 	if job := awaitStatus(t, upgraded, codexID, Succeeded); job.Agent != "codex" || job.Result == nil || *job.Result != "5" {
 		t.Fatal("Codex result or agent was not stored")
+	}
+	textID := submit(t, upgraded, Submission{RequestID: "codex-text", WorkKey: "text", Agent: "codex", Unverified: true, Run: run})
+	if job := awaitStatus(t, upgraded, textID, Succeeded); !job.Unverified || job.Result == nil || *job.Result != "5" {
+		t.Fatal("free-text result lost its provenance or answer")
+	}
+	var legacyResult sql.NullString
+	if err := upgraded.store.conn.QueryRowContext(t.Context(), "SELECT result FROM delegate_jobs WHERE id=?", textID).Scan(&legacyResult); err != nil || legacyResult.Valid {
+		t.Fatal("free-text result is exposed by the old result column")
 	}
 }

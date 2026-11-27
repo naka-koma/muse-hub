@@ -37,7 +37,9 @@ func TestPolicyMCPAndAudit(t *testing.T) {
 			t.Fatal(err)
 		}
 		server := httptest.NewServer(NewHandler(auth.Config{HeaderName: "Authorization", Scheme: "Bearer", Token: integrationToken},
-			"", slog.New(slog.DiscardHandler), Features{Jobs: jobs, Policy: rules}))
+			"", slog.New(slog.DiscardHandler), Features{Jobs: jobs, Policy: rules, CodexText: true,
+				CodexRunner: func(context.Context, string, string) (string, error) { return "5", nil },
+			}))
 		defer server.Close()
 		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 		defer cancel()
@@ -118,6 +120,19 @@ func TestPolicyMCPAndAudit(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	textID, err := jobs.Submit(t.Context(), asyncjobs.Submission{
+		RequestID: "codex-free-text", Agent: "codex", WorkKey: "text", Unverified: true,
+		Run: func(context.Context) (string, error) { return "unverified answer", nil },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	withPolicy(true, nil, func(call func(string, map[string]any) *mcp.CallToolResult) {
+		checkDenied(call("delegate", map[string]any{
+			"agent": "codex", "task": "3 + 4", "context": "reference", "data_category": []string{"code"}, "request_id": "free-text",
+		}), policy.UnverifiedInput)
+		checkDenied(call("get_result", map[string]any{"job_id": textID}), policy.UnverifiedInput)
+	})
 	withPolicy(true, map[string]map[string]policy.Level{"codex": {"code": policy.None}}, func(call func(string, map[string]any) *mcp.CallToolResult) {
 		checkDenied(call("get_result", map[string]any{"job_id": codexID}), policy.DisclosureDeny)
 		result := call("list_jobs", map[string]any{})
