@@ -176,3 +176,18 @@ func TestRecoveryAndRetention(t *testing.T) {
 		}
 	}
 }
+
+func TestStopUnconfirmedDoesNotReportCancelled(t *testing.T) {
+	m := openTestManager(t, filepath.Join(t.TempDir(), "jobs.sqlite"), time.Second)
+	started := make(chan struct{})
+	id := submit(t, m, Submission{RequestID: "stop-unconfirmed", WorkKey: "fixture", Run: func(ctx context.Context) (string, error) {
+		close(started)
+		<-ctx.Done()
+		return "", ErrStopUnconfirmed
+	}})
+	<-started
+	job, err := m.Cancel(t.Context(), id)
+	if err != nil || job.Status != Failed || job.Result != nil {
+		t.Fatalf("unconfirmed stop was reported as success: %v, %v", job, err)
+	}
+}

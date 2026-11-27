@@ -17,6 +17,7 @@ import (
 
 	"github.com/nakakoma/muse-hub/internal/asyncjobs"
 	"github.com/nakakoma/muse-hub/internal/auth"
+	"github.com/nakakoma/muse-hub/internal/dummyworker"
 	"github.com/nakakoma/muse-hub/internal/phase1"
 	"github.com/nakakoma/muse-hub/internal/policy"
 	"github.com/nakakoma/muse-hub/internal/server"
@@ -24,6 +25,9 @@ import (
 )
 
 func main() {
+	if code, handled := dummyworker.Command(os.Args[1:]); handled {
+		os.Exit(code)
+	}
 	if len(os.Args) > 1 {
 		if os.Args[1] != "policy" {
 			fmt.Fprintln(os.Stderr, errPolicyUsage)
@@ -66,6 +70,9 @@ func main() {
 		}
 	}
 	if cfg.phase2DB != "" {
+		if cfg.phase2Subprocess {
+			features.DelegateRunner = dummyworker.Run
+		}
 		startup, cancel := context.WithTimeout(ctx, 5*time.Second)
 		features.Jobs, err = asyncjobs.Open(startup, cfg.phase2DB, 30*time.Second)
 		if err == nil {
@@ -121,13 +128,14 @@ func main() {
 }
 
 type config struct {
-	auth            auth.Config
-	port            int
-	tailscaleHost   string
-	phase1Volume    string
-	phase2DB        string
-	phase3Policy    string
-	phase5Approvals bool
+	auth             auth.Config
+	port             int
+	tailscaleHost    string
+	phase1Volume     string
+	phase2DB         string
+	phase2Subprocess bool
+	phase3Policy     string
+	phase5Approvals  bool
 }
 
 var tailscaleDNSName = regexp.MustCompile(`(?i)^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.ts\.net$`)
@@ -179,6 +187,13 @@ func loadConfig() (config, error) {
 	if phase1Volume != "" && phase2DB != "" {
 		return config{}, errors.New("configure either Phase 1 ask or Phase 2 delegate")
 	}
+	phase2Subprocess := strings.TrimSpace(os.Getenv("MUSE_HUB_PHASE2_SUBPROCESS"))
+	if phase2Subprocess != "" && phase2Subprocess != "1" {
+		return config{}, errors.New("MUSE_HUB_PHASE2_SUBPROCESS must be unset or 1")
+	}
+	if phase2Subprocess == "1" && (phase2DB == "" || !dummyworker.Supported) {
+		return config{}, errors.New("Phase 2 subprocess verification requires Windows and the job database")
+	}
 	phase3Policy := strings.TrimSpace(os.Getenv("MUSE_HUB_PHASE3_POLICY"))
 	if phase3Policy != "" && phase2DB == "" {
 		return config{}, errors.New("Phase 3 policy requires the job database")
@@ -191,7 +206,7 @@ func loadConfig() (config, error) {
 		return config{}, errors.New("Phase 5 approvals require a policy configuration and job database")
 	}
 	return config{auth: authConfig, port: port, tailscaleHost: tailscaleHost, phase1Volume: phase1Volume,
-		phase2DB: phase2DB, phase3Policy: phase3Policy, phase5Approvals: phase5 == "1"}, nil
+		phase2DB: phase2DB, phase2Subprocess: phase2Subprocess == "1", phase3Policy: phase3Policy, phase5Approvals: phase5 == "1"}, nil
 }
 
 func envOr(key, fallback string) string {
