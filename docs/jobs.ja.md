@@ -1,8 +1,8 @@
-# Phase 2の非同期ジョブ検証
+# ジョブの委譲と結果取得
 
-[English](phase2-jobs.md) | 日本語
+[English](jobs.md) | 日本語
 
-Phase 2では、固定のダミー質問で非同期ジョブを検証します。既定ではHub内のワーカーが約1秒後に `5` を返します。
+`delegate` で依頼を送り、`get_result` で回答を受け取ります。ClaudeやCodexを設定すると委譲先に選べます。疎通の確認には、固定の質問に `5` を返すダミーワーカーを使えます。
 
 ## Hubの起動
 
@@ -11,13 +11,13 @@ Phase 2では、固定のダミー質問で非同期ジョブを検証します�
 ```powershell
 $jobDir = Join-Path $env:LOCALAPPDATA 'MuseHub'
 New-Item -ItemType Directory -Path $jobDir -Force | Out-Null
-$env:MUSE_HUB_PHASE2_DB = Join-Path $jobDir 'phase2-jobs.sqlite'
+$env:MUSE_HUB_JOBS_DB = Join-Path $jobDir 'muse-jobs.sqlite'
 go run ./cmd/muse-hub
 ```
 
-`MUSE_HUB_PHASE1_AUTH_VOLUME` は未設定にしてください。Phase 2では `ping`、`echo` に加え、`delegate`、`get_result`、`cancel_job`、`list_jobs` が使えます。Museからの接続は [Tailscale Serveの手順](usage.ja.md#tailscale-serve) に従います。
+`delegate` を使うときは `MUSE_HUB_CLAUDE_ASK_VOLUME` を未設定にします。Museからは [Tailscale Serveの手順](usage.ja.md#tailscale-serve) で接続します。
 
-## ツールの呼び出し
+## ダミージョブで委譲を確認する
 
 次の引数で `delegate` を呼びます。新しいジョブごとに別の `request_id` を作り、同じ依頼を再送するときだけ再利用してください。`session` は任意です。同じセッションで実行できるジョブは1件です。
 
@@ -33,15 +33,15 @@ go run ./cmd/muse-hub
 
 ## Windowsで子プロセスの停止を確認する
 
-ジョブDBを指定したうえで、Hubの起動前に `MUSE_HUB_PHASE2_SUBPROCESS=1` を設定します。同じダミー処理を約5秒かけて実行します。Hubは固定の補助プロセスとその子をWindowsのJob Objectにまとめます。ツールの引数をコマンドとして実行せず、Hubのトークンも補助プロセスに渡しません。
+ジョブDBを指定したうえで、Hubの起動前に `MUSE_HUB_DUMMY_SUBPROCESS=1` を設定します。同じダミー処理を約5秒かけて実行します。Hubは固定の補助プロセスとその子をWindowsのJob Objectにまとめます。ツールの引数をコマンドとして実行せず、Hubのトークンも補助プロセスに渡しません。
 
 新しい `request_id` でダミージョブを開始し、実行中に返されたIDを `cancel_job` に渡してください。補助プロセスが子の終了を待ち、Hubが親子の停止を確認できた場合に `cancelled` を返します。停止を確認できなかった場合は `failed` になります。設定を外して起動すると、Hub内でダミー処理を実行します。
 
 ## WindowsでCodexへの委譲を確認する
 
-リポジトリの外にCodex専用ディレクトリを作ります。別のPowerShellで `CODEX_HOME` にそのディレクトリを指定し、`codex login` でログインします。Hubの起動時は、`MUSE_HUB_CODEX_HOME` に同じディレクトリを、`MUSE_HUB_CODEX_EXE` にWindows版 `codex.exe` の絶対パスを指定します。ジョブDBも設定してください。
+リポジトリの外にCodex専用ディレクトリを作ります。別のPowerShellで `CODEX_HOME` にそのディレクトリを指定し、`codex login` でログインします。Hubを起動するときは `MUSE_HUB_CODEX_HOME` に同じディレクトリを指定します。`MUSE_HUB_CODEX_EXE` にはWindows版 `codex.exe` の絶対パスを指定します。ジョブDBも設定してください。
 
-`delegate` を `agent: "codex"`、`task: "2 + 3"`、空の `context`、`data_category: ["code"]`、新しい `request_id` で呼びます。返ったIDを `get_result` に渡すと、完了時に `succeeded` と結果 `"5"` が返ります。Hubが送るのは固定の計算問題です。シェルやWeb検索などを無効にし、回答は `"5"` だけを受け付けます。ポリシーを使う場合は、Codexに `code` カテゴリと `arithmetic` リソースを許可します。
+ダミージョブの例の `agent` を `"codex"` に変更します。新しい `request_id` を指定し、`delegate` を呼びます。返ったIDを `get_result` に渡すと、完了時に `succeeded` と結果 `"5"` が返ります。Hubは固定の計算問題を送り、シェルやWeb検索などを無効にします。回答は `"5"` だけを受け付けます。ポリシーを使う場合は、Codexに `code` カテゴリと `arithmetic` リソースを許可します。
 
 ### 文章や文脈をCodexに送る
 
@@ -55,6 +55,6 @@ Codexに共有できる文章を指定してください。CLIには標準入力
 
 ## Claudeに委譲する
 
-[Claude用の隔離コンテナ](phase1-isolation.ja.md) を準備し、Composeのプロキシを起動しておきます。`MUSE_HUB_CLAUDE_AUTH_VOLUME` とジョブDBを設定すると、Claudeへの非同期委譲が有効になります。ポリシーを読み込まないHubで `MUSE_HUB_CLAUDE_TEXT=1` を設定すると、文章や文脈も送れます。入力と回答の上限はCodexと同じです。Claudeは一度に1件のジョブを実行します。
+[Claude用の隔離コンテナ](claude-isolation.ja.md) を準備し、Composeのプロキシを起動しておきます。`MUSE_HUB_CLAUDE_AUTH_VOLUME` とジョブDBを設定すると、Claudeへの非同期委譲が有効になります。ポリシーを読み込まないHubで `MUSE_HUB_CLAUDE_TEXT=1` を設定すると、文章や文脈も送れます。入力と回答の上限はCodexと同じです。Claudeは一度に1件のジョブを実行します。
 
 `delegate` に `agent: "claude"` を指定し、返ったジョブIDで `get_result` を呼びます。アダプターは質問を標準入力で渡し、Claudeのツールとコネクタを無効にします。完了時やキャンセル時はジョブ用コンテナを削除します。

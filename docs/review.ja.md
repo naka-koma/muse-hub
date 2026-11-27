@@ -1,8 +1,8 @@
-# Phase 4のセッションとレビュー
+# セッションとレビュー
 
-[English](phase4-review.md) | 日本語
+[English](review.md) | 日本語
 
-[Phase 3のポリシー](phase3-policy.ja.md) を指定してHubを起動します。`arithmetic` に対して `read` と `consult` を許可し、両方のダミーエージェントで `code: full` を使えるようにしてください。レビューはHubの中で実行します。
+[開示ポリシー](policy.ja.md) で `arithmetic` への `read` と `consult` を許可します。両方のダミーエージェントに `code: full` を設定してHubを起動します。レビューはHubの中で実行します。
 
 ## レビューを始める
 

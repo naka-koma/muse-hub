@@ -1,8 +1,8 @@
-# Phase 5のポリシー提案と承認
+# ポリシーの提案と承認
 
-[English](phase5-approval.md) | 日本語
+[English](policy-approval.md) | 日本語
 
-[Phase 3のポリシーとジョブDB](phase3-policy.ja.md) を設定します。Hubを起動する前に `MUSE_HUB_PHASE5_APPROVALS=1` を指定してください。初回起動でYAMLの設定をローカルDBに登録し、次回からはDBの有効な設定を使います。YAMLのパスは引き続き指定してください。
+[開示ポリシーとジョブDB](policy.ja.md) を設定し、`MUSE_HUB_POLICY_APPROVALS=1` を指定してHubを起動します。Hubは初回起動時にYAMLの設定をローカルDBに登録し、次回からはDBで有効な設定を使います。YAMLのパスは引き続き指定してください。
 
 ## 変更を提案する
 
@@ -24,7 +24,7 @@
 
 ## 自宅PCで確認して承認する
 
-Hubを停止します。ジョブDBがあるPCで `MUSE_HUB_PHASE2_DB` にそのパスを指定し、現在の設定と提案内容を確認してください。
+Hubを停止します。ジョブDBがあるPCで `MUSE_HUB_JOBS_DB` にそのパスを指定し、現在の設定と提案内容を確認してください。
 
 ```powershell
 go run ./cmd/muse-hub policy current

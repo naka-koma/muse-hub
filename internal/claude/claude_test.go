@@ -1,4 +1,4 @@
-package phase1
+package claude
 
 import (
 	"context"
@@ -35,7 +35,7 @@ func TestProbeAnswerRejectsUnapprovedOutput(t *testing.T) {
 }
 
 func TestValidVolumeName(t *testing.T) {
-	if !ValidVolumeName("muse-phase1-claude-auth") {
+	if !ValidVolumeName("muse-hub-claude-auth") {
 		t.Fatal("default volume name was rejected")
 	}
 	for _, name := range []string{"../outside", "name:/path", "--help", "name with space", "${ambiguous}"} {

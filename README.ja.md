@@ -2,7 +2,7 @@
 
 [English](README.md) | 日本語
 
-Museから自宅PCへの接続を試すためのGo製MCPサーバーです。`ping`、`echo`、ダミージョブを使って疎通を確認できます。
+Museから自宅PCのClaudeやCodexに依頼を送るための、Go製MCPサーバーです。
 
 ## セットアップ
 

@@ -2,7 +2,7 @@
 
 English | [日本語](README.ja.md)
 
-A Go MCP server for testing connectivity from Muse to a home PC with `ping`, `echo`, and dummy jobs.
+A Go MCP server that lets Muse delegate jobs to Claude and Codex on a home PC.
 
 ## Setup
 

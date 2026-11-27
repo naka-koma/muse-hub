@@ -1,8 +1,8 @@
-# Phase 1 isolation check
+# Set up an isolated Claude worker
 
-English | [日本語](phase1-isolation.ja.md)
+English | [日本語](claude-isolation.ja.md)
 
-Phase 1 checks whether Claude Code can answer a synthetic question from an isolated Docker container. It uses the operator's own Claude sign-in in a dedicated Docker volume. You can first check the container on its own, then enable `ask` in the Hub.
+Claude Code runs in an isolated Docker container. Sign in with your Claude account. Docker stores that login in a dedicated volume.
 
 ## Boundary
 
@@ -10,15 +10,17 @@ Phase 1 checks whether Claude Code can answer a synthetic question from an isola
 - The one-shot prompt disables built-in tools, custom MCP servers, cloud connectors, hooks, skills, and session persistence. The login volume persists Claude account authentication.
 - The CLI joins an internal Docker network. A separate proxy allows HTTPS tunnels to the named Anthropic hosts on port 443. It has no published port. The proxy checks the requested CONNECT destination. It does not inspect encrypted HTTP paths.
 
-## Run the check
+## Build, verify, and sign in
 
 Use Docker Desktop with Linux containers and Docker Compose. Open PowerShell 7 in the repository root.
 
 ```powershell
-$phase1 = @('-p', 'muse-phase1-check', '-f', 'experiments/phase1/compose.yaml')
-docker volume create muse-phase1-claude-auth
-docker compose @phase1 build
-docker compose @phase1 run --rm -T --entrypoint node claude /opt/verify.mjs
+$claudeCompose = @('-f', 'deploy/claude/compose.yaml')
+$env:MUSE_HUB_CLAUDE_AUTH_VOLUME = 'muse-hub-claude-auth'
+docker volume create $env:MUSE_HUB_CLAUDE_AUTH_VOLUME
+docker compose @claudeCompose build
+docker compose @claudeCompose up -d proxy
+docker compose @claudeCompose run --rm -T --entrypoint node claude /opt/verify.mjs
 ```
 
 The check tests the restrictions on the filesystem and inherited credentials, the absence of a default route, denial of an unlisted host and port, and valid TLS connections to two allowed hosts. It does not make model requests.
@@ -26,24 +28,29 @@ The check tests the restrictions on the filesystem and inherited credentials, th
 Sign in inside the container and follow the CLI prompts in your browser. The project uses its own Docker volume for this login.
 
 ```powershell
-docker compose @phase1 run --rm claude auth login --claudeai
+docker compose @claudeCompose run --rm claude auth login --claudeai
 ```
 
 Run a synthetic prompt. The expected answer is `5`.
 
 ```powershell
-$phase1Settings = '{"disableAllHooks":true,"disableClaudeAiConnectors":true}'
-docker compose @phase1 run --rm -T claude --print 'What is 2 + 3? Reply with only the digit.' `
+$claudeSettings = '{"disableAllHooks":true,"disableClaudeAiConnectors":true}'
+docker compose @claudeCompose run --rm -T claude --print 'What is 2 + 3? Reply with only the digit.' `
   --tools '' --strict-mcp-config --setting-sources '' --disable-slash-commands `
-  --settings $phase1Settings --no-session-persistence --max-turns 1
+  --settings $claudeSettings --no-session-persistence --max-turns 1
 ```
 
-## Enable `ask` in the Hub
+## Connect the worker to the Hub
+
+Keep the Compose proxy running. Follow the [delegation guide](jobs.md#delegate-to-claude) to use Claude for asynchronous jobs.
+
+### Optional synchronous check with `ask`
 
 Keep the Compose proxy running. In the PowerShell session that starts the Hub, set the token as described in the [README](../README.md), then set the name of the login volume and start the server.
 
 ```powershell
-$env:MUSE_HUB_PHASE1_AUTH_VOLUME = 'muse-phase1-claude-auth'
+$env:MUSE_HUB_CLAUDE_ASK_VOLUME = $env:MUSE_HUB_CLAUDE_AUTH_VOLUME
+Remove-Item Env:MUSE_HUB_CLAUDE_AUTH_VOLUME
 go run ./cmd/muse-hub
 ```
 
@@ -55,6 +62,6 @@ To test with Muse, follow the [Tailscale Serve setup](usage.md#tailscale-serve) 
 {"agent":"claude","task":"2 + 3","context":"","data_category":["code"]}
 ```
 
-The expected result is `{"answer":"5"}`. Phase 1 accepts only this synthetic request. The Hub sends a fixed prompt to Claude.
+The expected result is `{"answer":"5"}`. The `ask` tool accepts only this fixed question.
 
-When finished, stop the Hub and run `docker compose @phase1 down`. To remove the saved sign-in as well, run `docker volume rm muse-phase1-claude-auth` after the containers stop.
+To shut down the Claude worker, stop the Hub and run `docker compose @claudeCompose down`. To delete the saved login, remove the configured volume after the containers stop.

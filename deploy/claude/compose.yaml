@@ -1,3 +1,5 @@
+name: muse-hub
+
 services:
   claude:
     build:
@@ -57,4 +59,4 @@ networks:
 volumes:
   claude-auth:
     external: true
-    name: ${MUSE_HUB_PHASE1_AUTH_VOLUME:-muse-phase1-claude-auth}
+    name: ${MUSE_HUB_CLAUDE_AUTH_VOLUME:-${MUSE_HUB_PHASE1_AUTH_VOLUME:-muse-hub-claude-auth}}
