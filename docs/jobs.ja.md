@@ -55,6 +55,33 @@ Codexに共有できる文章を指定してください。CLIには標準入力
 
 ## Claudeに委譲する
 
-[Claude用の隔離コンテナ](claude-isolation.ja.md) を準備し、Composeのプロキシを起動しておきます。`MUSE_HUB_CLAUDE_AUTH_VOLUME` とジョブDBを設定すると、Claudeへの非同期委譲が有効になります。ポリシーを読み込まないHubで `MUSE_HUB_CLAUDE_TEXT=1` を設定すると、文章や文脈も送れます。入力と回答の上限はCodexと同じです。Claudeは一度に1件のジョブを実行します。
+`MUSE_HUB_JOBS_DB` を設定し、Claudeの起動方式を選びます。片方だけを設定する場合、`MUSE_HUB_CLAUDE_BACKEND` は省略できます。
 
-`delegate` に `agent: "claude"` を指定し、返ったジョブIDで `get_result` を呼びます。アダプターは質問を標準入力で渡し、Claudeのツールとコネクタを無効にします。完了時やキャンセル時はジョブ用コンテナを削除します。
+### Dockerで起動する
+
+[Claude用の隔離コンテナ](claude-isolation.ja.md) を準備し、Composeのプロキシを起動します。Hubの起動時は `MUSE_HUB_CLAUDE_BACKEND=docker` を指定します。`MUSE_HUB_CLAUDE_AUTH_VOLUME` には専用ボリュームの名前を設定します。
+
+### Windows版CLIを専用プロファイルで起動する
+
+`--restricted` と `--safe-mode` を使えるClaude Codeを用意します。別のPowerShellで専用ディレクトリを作り、Claudeにログインします。
+
+```powershell
+$claudeProfile = Join-Path $env:LOCALAPPDATA 'MuseHub\claude-profile'
+New-Item -ItemType Directory -Path $claudeProfile -Force | Out-Null
+$env:CLAUDE_CONFIG_DIR = $claudeProfile
+claude auth login --claudeai
+```
+
+Hubを起動するPowerShellで次の設定を追加します。
+
+```powershell
+$env:MUSE_HUB_CLAUDE_BACKEND = 'native'
+$env:MUSE_HUB_CLAUDE_EXE = (Get-Command claude.exe).Source
+$env:MUSE_HUB_CLAUDE_CONFIG_DIR = Join-Path $env:LOCALAPPDATA 'MuseHub\claude-profile'
+```
+
+CLIはWindowsのユーザー権限で動きます。ファイルシステムや通信経路を分離したい場合はDockerを選びます。
+
+### Claudeにジョブを送る
+
+`delegate` に `agent: "claude"` を指定し、返ったジョブIDで `get_result` を呼びます。どちらの方式も、質問は標準入力で渡し、ツールとコネクタを無効にします。ポリシーを読み込まないHubで `MUSE_HUB_CLAUDE_TEXT=1` を設定すると、文章や文脈も送れます。入力と回答の上限はCodexと同じです。Claudeは一度に1件のジョブを実行します。

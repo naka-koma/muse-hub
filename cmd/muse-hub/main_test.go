@@ -29,6 +29,9 @@ func TestLoadConfigAcceptsCurrentAndLegacySettings(t *testing.T) {
 	t.Setenv("MUSE_HUB_CODEX_HOME", "")
 	t.Setenv("MUSE_HUB_CODEX_TEXT", "")
 	t.Setenv("MUSE_HUB_CLAUDE_AUTH_VOLUME", "")
+	t.Setenv("MUSE_HUB_CLAUDE_BACKEND", "")
+	t.Setenv("MUSE_HUB_CLAUDE_EXE", "")
+	t.Setenv("MUSE_HUB_CLAUDE_CONFIG_DIR", "")
 	t.Setenv("MUSE_HUB_CLAUDE_TEXT", "")
 	t.Setenv("MUSE_HUB_CLAUDE_ASK_VOLUME", "")
 	t.Setenv("MUSE_HUB_PHASE1_AUTH_VOLUME", "")
@@ -80,5 +83,37 @@ func TestJobsDBSettingRejectsConflictingNames(t *testing.T) {
 	t.Setenv("MUSE_HUB_PHASE2_DB", "other.sqlite")
 	if _, err := jobsDBSetting(); err == nil {
 		t.Fatal("different databases under current and former names were accepted")
+	}
+}
+
+func TestSelectClaudeBackend(t *testing.T) {
+	tests := []struct {
+		name, selection, volume, executable, profile, db, want string
+		wantErr                                                bool
+	}{
+		{name: "disabled"},
+		{name: "existing Docker setting", volume: "claude-login", db: "jobs.sqlite", want: "docker"},
+		{name: "explicit Docker selection", selection: "docker", volume: "claude-login", profile: "prepared-profile", db: "jobs.sqlite", want: "docker"},
+		{name: "native profile", executable: "claude.exe", profile: "profile", db: "jobs.sqlite", want: "native", wantErr: !dummyworker.Supported},
+		{name: "explicit native selection", selection: "native", volume: "claude-login", executable: "claude.exe", profile: "profile", db: "jobs.sqlite", want: "native", wantErr: !dummyworker.Supported},
+		{name: "ambiguous selection", volume: "claude-login", executable: "claude.exe", profile: "profile", db: "jobs.sqlite", wantErr: true},
+		{name: "native profile missing", selection: "native", executable: "claude.exe", db: "jobs.sqlite", wantErr: true},
+		{name: "Docker volume missing", selection: "docker", db: "jobs.sqlite", wantErr: true},
+		{name: "job database missing", selection: "docker", volume: "claude-login", wantErr: true},
+		{name: "unsupported selection", selection: "auto", wantErr: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := selectClaudeBackend(tt.selection, tt.volume, tt.executable, tt.profile, tt.db)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatal("expected the Claude settings to be rejected")
+				}
+				return
+			}
+			if err != nil || got != tt.want {
+				t.Fatalf("backend = %q, error = %v, want %q", got, err, tt.want)
+			}
+		})
 	}
 }
