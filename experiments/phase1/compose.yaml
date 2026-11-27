@@ -8,6 +8,8 @@ services:
     cap_drop: [ALL]
     security_opt: [no-new-privileges:true]
     dns: [127.0.0.1]
+    logging:
+      driver: none
     working_dir: /tmp
     tmpfs:
       - /tmp:rw,nosuid,nodev,mode=1777

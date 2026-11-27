@@ -210,7 +210,8 @@ func TestCodexAgentPersistsAlongsideLegacyJobs(t *testing.T) {
 	}
 	_, alterErr := db.ExecContext(t.Context(), `ALTER TABLE delegate_jobs DROP COLUMN agent;
 		ALTER TABLE delegate_jobs DROP COLUMN unverified;
-		ALTER TABLE delegate_jobs DROP COLUMN codex_text_result;`)
+		ALTER TABLE delegate_jobs DROP COLUMN codex_text_result;
+		ALTER TABLE delegate_jobs DROP COLUMN delegation_agent;`)
 	if err := errors.Join(alterErr, db.Close()); err != nil {
 		t.Fatal(err)
 	}
@@ -235,5 +236,9 @@ func TestCodexAgentPersistsAlongsideLegacyJobs(t *testing.T) {
 	var legacyResult sql.NullString
 	if err := upgraded.store.conn.QueryRowContext(t.Context(), "SELECT result FROM delegate_jobs WHERE id=?", textID).Scan(&legacyResult); err != nil || legacyResult.Valid {
 		t.Fatal("free-text result is exposed by the old result column")
+	}
+	claudeID := submit(t, upgraded, Submission{RequestID: "claude-text", WorkKey: "claude-text", Agent: "claude", Unverified: true, Run: run})
+	if job := awaitStatus(t, upgraded, claudeID, Succeeded); job.Agent != "claude" || !job.Unverified {
+		t.Fatal("Claude job lost its backend or disclosure classification")
 	}
 }

@@ -19,6 +19,8 @@
 | `MUSE_HUB_CODEX_EXE` | 未設定 | [Codexへの委譲検証](phase2-jobs.ja.md#windowsでcodexへの委譲を確認する) に使うWindows版 `codex.exe` の絶対パス。 |
 | `MUSE_HUB_CODEX_HOME` | 未設定 | Codex専用ログインディレクトリの絶対パス。実行ファイルとジョブDBの設定も必要です。 |
 | `MUSE_HUB_CODEX_TEXT` | 未設定 | ポリシーを読み込んでいないHubで `1` を指定すると、[文章や文脈をCodexに送れます](phase2-jobs.ja.md#文章や文脈をcodexに送る)。 |
+| `MUSE_HUB_CLAUDE_AUTH_VOLUME` | 未設定 | [Claudeへの非同期委譲](phase2-jobs.ja.md#claudeに委譲する) に使う専用Dockerログインボリューム。ジョブDBの設定も必要です。 |
+| `MUSE_HUB_CLAUDE_TEXT` | 未設定 | ポリシーを読み込んでいないHubで `1` を指定すると、文章や文脈をClaudeに送れます。 |
 | `MUSE_HUB_PHASE3_POLICY` | 未設定 | [Phase 3のポリシーと監査](phase3-policy.ja.md) に使うYAMLのパス。ジョブDBの設定も必要です。 |
 | `MUSE_HUB_PHASE5_APPROVALS` | 未設定 | `1` で [ポリシー提案とローカル承認](phase5-approval.ja.md) を有効にします。ポリシーとジョブDBの設定も必要です。 |
 
