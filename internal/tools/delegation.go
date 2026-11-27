@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"log/slog"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -14,14 +15,16 @@ import (
 )
 
 type DelegateInput struct {
-	Agent        string   `json:"agent" jsonschema:"use dummy, or codex when the Codex probe is enabled"`
-	Task         string   `json:"task" jsonschema:"use 2 + 3 for the Phase 2 probe"`
-	Context      string   `json:"context" jsonschema:"use an empty string for the Phase 2 probe"`
-	DataCategory []string `json:"data_category" jsonschema:"use [code] for the Phase 2 probe"`
+	Agent        string   `json:"agent" jsonschema:"use dummy or codex when configured"`
+	Task         string   `json:"task" jsonschema:"use 2 + 3 for the arithmetic probe, or up to 4096 UTF-8 bytes in Codex text mode"`
+	Context      string   `json:"context,omitempty" jsonschema:"optional reference text, up to 16384 UTF-8 bytes in Codex text mode"`
+	DataCategory []string `json:"data_category" jsonschema:"use [code]"`
 	RequestID    string   `json:"request_id" jsonschema:"a unique ID for the request; reuse it only when retrying the same request"`
 	Session      string   `json:"session,omitempty" jsonschema:"optional session ID; only one job can run in a session at a time"`
 	Resource     string   `json:"resource,omitempty" jsonschema:"optional resource alias; use arithmetic for the synthetic probe"`
 }
+
+const maxCodexTask, maxCodexContext = 4 * 1024, 16 * 1024
 
 type DelegatedJobInput struct {
 	JobID string `json:"job_id" jsonschema:"job ID returned by delegate"`
@@ -32,13 +35,17 @@ type ListJobsOutput struct {
 }
 
 func RegisterDelegation(server *mcp.Server, manager *asyncjobs.Manager, logger *slog.Logger, rules *policy.Policy, approvals bool,
-	dummyRunner, codexRunner func(context.Context) (string, error)) {
+	dummyRunner func(context.Context) (string, error), codexRunner func(context.Context, string, string) (string, error), codexText bool) {
 	if dummyRunner == nil {
 		dummyRunner = runDummyDelegation
 	}
 	description := "Start an asynchronous dummy job and return its ID. Use agent dummy, task 2 + 3, empty context, and data_category [code]."
 	if codexRunner != nil {
-		description += " Use agent codex to send the same fixed arithmetic probe to Codex."
+		if codexText && rules == nil {
+			description += " Use agent codex with a text task and optional reference context. Use only text approved for sending to Codex."
+		} else {
+			description += " Use agent codex to send the same fixed arithmetic probe to Codex."
+		}
 	}
 	gate := policyGate{policy: rules, manager: manager}
 	if rules != nil {
@@ -58,24 +65,34 @@ func RegisterDelegation(server *mcp.Server, manager *asyncjobs.Manager, logger *
 			resource = arithmeticResource
 		}
 		runner, workKey := dummyRunner, "synthetic-sum-v1"
-		if input.Agent == "codex" {
-			runner, workKey = codexRunner, "codex-synthetic-sum-v1"
+		isCodex := input.Agent == "codex" && codexRunner != nil
+		if isCodex {
+			runner = func(ctx context.Context) (string, error) {
+				return codexRunner(ctx, input.Task, input.Context)
+			}
+			workKey = "codex-synthetic-sum-v1"
 		}
-		supported := input.Agent == "dummy" || input.Agent == "codex" && runner != nil
-		verified := supported && strings.TrimSpace(input.Task) == "2 + 3" && input.Context == "" &&
-			len(input.DataCategory) == 1 && input.DataCategory[0] == "code" && resource == arithmeticResource
+		codeInput := len(input.DataCategory) == 1 && input.DataCategory[0] == "code" && resource == arithmeticResource
+		verified := (input.Agent == "dummy" || isCodex) && codeInput &&
+			strings.TrimSpace(input.Task) == "2 + 3" && input.Context == ""
+		textInput := codexText && isCodex && codeInput && strings.TrimSpace(input.Task) != "" &&
+			len(input.Task) <= maxCodexTask && len(input.Context) <= maxCodexContext
 		if err := gate.check(ctx, "delegate", policy.Access{
 			Agent: input.Agent, Operation: "consult", Resource: resource,
 			Portions: []policy.Portion{{Categories: input.DataCategory, Level: policy.Full}},
 		}, verified); err != nil {
 			return nil, StartJobOutput{}, err
 		}
-		if !verified {
+		if !verified && !textInput {
 			logCall(logger, "delegate", "rejected", "", started)
 			return nil, StartJobOutput{}, asyncjobs.ErrInvalidInput
 		}
+		if !verified {
+			// The task length separates the two fields without ambiguous delimiters.
+			workKey = "codex-text-v1:" + strconv.Itoa(len(input.Task)) + ":" + input.Task + input.Context
+		}
 		id, err := manager.Submit(ctx, asyncjobs.Submission{
-			RequestID: input.RequestID, Session: input.Session, Agent: input.Agent, WorkKey: workKey, Run: runner,
+			RequestID: input.RequestID, Session: input.Session, Agent: input.Agent, WorkKey: workKey, Unverified: !verified, Run: runner,
 		})
 		logDelegation(logger, "delegate", id, started, err)
 		return nil, StartJobOutput{JobID: id}, err
@@ -101,7 +118,7 @@ func RegisterDelegation(server *mcp.Server, manager *asyncjobs.Manager, logger *
 				}
 				out.Result, out.Review = nil, &summary
 			}
-		} else if err := gate.check(ctx, "get_result", arithmeticRead(job.Agent), true); err != nil {
+		} else if err := gate.check(ctx, "get_result", arithmeticRead(job.Agent), !job.Unverified); err != nil {
 			return nil, JobResultOutput{}, err
 		}
 		logDelegation(logger, "get_result", job.JobID, started, err)
@@ -129,6 +146,9 @@ func RegisterDelegation(server *mcp.Server, manager *asyncjobs.Manager, logger *
 			return nil, ListJobsOutput{}, err
 		}
 		list, err := manager.List(ctx)
+		if rules != nil {
+			list = slices.DeleteFunc(list, func(job asyncjobs.Snapshot) bool { return job.Unverified })
+		}
 		if err == nil && slices.ContainsFunc(list, func(job asyncjobs.Snapshot) bool { return job.Agent == "codex" }) {
 			if err := gate.check(ctx, "list_jobs", arithmeticRead("codex"), true); err != nil {
 				list = slices.DeleteFunc(list, func(job asyncjobs.Snapshot) bool { return job.Agent == "codex" })

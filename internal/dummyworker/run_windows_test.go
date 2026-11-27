@@ -15,7 +15,7 @@ func TestStopWaitsForParentAndChild(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	tree, err := startTree(exe, "-test.run=^TestProcessTreeFixture$", "--", "parent")
+	tree, err := startTree(exe, 0, "-test.run=^TestProcessTreeFixture$", "--", "parent")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -69,5 +69,14 @@ func TestCancelledContextDoesNotStartFixture(t *testing.T) {
 	cancel()
 	if _, err := Run(ctx); err != context.Canceled {
 		t.Fatalf("got %v, want context.Canceled", err)
+	}
+}
+
+func TestCodexRateLimitMessageCanSpanWrites(t *testing.T) {
+	var diagnostic codexDiagnostics
+	_, _ = diagnostic.Write([]byte("ERROR: exceeded retry limit, last status: 429"))
+	_, _ = diagnostic.Write([]byte(" Too Many Requests\n"))
+	if !diagnostic.rateLimited {
+		t.Fatal("split Codex rate-limit message was not recognized")
 	}
 }

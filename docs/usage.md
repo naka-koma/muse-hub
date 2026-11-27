@@ -18,6 +18,7 @@ English | [日本語](usage.ja.md) | [Setup and first run](../README.md)
 | `MUSE_HUB_PHASE2_SUBPROCESS` | Unset | Set to `1` on Windows to run the same dummy job in a process tree. Requires the job database. |
 | `MUSE_HUB_CODEX_EXE` | Unset | Absolute path to the native Windows Codex executable for the [Codex probe](phase2-jobs.md#check-codex-delegation-on-windows). |
 | `MUSE_HUB_CODEX_HOME` | Unset | Absolute path to the dedicated Codex login directory. Requires the executable and the job database. |
+| `MUSE_HUB_CODEX_TEXT` | Unset | Set to `1` to [enable text requests and context](phase2-jobs.md#send-text-and-context-to-codex) when no disclosure policy is loaded. |
 | `MUSE_HUB_PHASE3_POLICY` | Unset | Local YAML path for [Phase 3 policy and audit](phase3-policy.md). Requires the job database. |
 | `MUSE_HUB_PHASE5_APPROVALS` | Unset | Set to `1` to enable [policy proposals and local approval](phase5-approval.md). Requires the policy path and job database. |
 

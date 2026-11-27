@@ -42,3 +42,13 @@ go run ./cmd/muse-hub
 リポジトリの外にCodex専用ディレクトリを作ります。別のPowerShellで `CODEX_HOME` にそのディレクトリを指定し、`codex login` でログインします。Hubの起動時は、`MUSE_HUB_CODEX_HOME` に同じディレクトリを、`MUSE_HUB_CODEX_EXE` にWindows版 `codex.exe` の絶対パスを指定します。ジョブDBも設定してください。
 
 `delegate` を `agent: "codex"`、`task: "2 + 3"`、空の `context`、`data_category: ["code"]`、新しい `request_id` で呼びます。返ったIDを `get_result` に渡すと、完了時に `succeeded` と結果 `"5"` が返ります。Hubが送るのは固定の計算問題です。シェルやWeb検索などを無効にし、回答は `"5"` だけを受け付けます。ポリシーを使う場合は、Codexに `code` カテゴリと `arithmetic` リソースを許可します。
+
+### 文章や文脈をCodexに送る
+
+Codexの設定を済ませ、ポリシーを読み込まないHubの起動時に `MUSE_HUB_CODEX_TEXT=1` を設定します。`task` は必須で最大4 KiB、参照用の `context` は任意で最大16 KiBです。上限はUTF-8のバイト数で数えます。`data_category: ["code"]` を指定し、依頼や文脈を変えたら新しい `request_id` を使います。
+
+```json
+{"agent":"codex","task":"contextを1文で要約して","context":"今回のビルドは2分で終わった。前回は5分かかった。","data_category":["code"],"request_id":"summary-1"}
+```
+
+Codexに共有できる文章を指定してください。CLIには標準入力で文章を渡し、計算問題と同じツール制限を使います。Hubは最大16 KiBの回答を保存し、`get_result` で返します。ポリシーを読み込んだHubでは固定の計算問題だけを受け付け、過去の自由入力への回答の取得も拒否します。

@@ -19,7 +19,9 @@ const schema = `CREATE TABLE IF NOT EXISTS delegate_jobs (
 	started_at INTEGER,
 	finished_at INTEGER,
 	result TEXT,
-	agent TEXT NOT NULL DEFAULT 'dummy' CHECK(agent IN ('dummy', 'codex'))
+	agent TEXT NOT NULL DEFAULT 'dummy' CHECK(agent IN ('dummy', 'codex')),
+	unverified INTEGER NOT NULL DEFAULT 0 CHECK(unverified IN (0, 1)),
+	codex_text_result TEXT
 );
 CREATE INDEX IF NOT EXISTS delegate_jobs_history ON delegate_jobs(created_at DESC, id DESC);
 CREATE INDEX IF NOT EXISTS delegate_jobs_retention ON delegate_jobs(finished_at);
@@ -66,7 +68,7 @@ CREATE TABLE IF NOT EXISTS policy_proposals (
 	decided_at INTEGER
 );`
 
-const snapshotColumns = "j.id, j.status, j.created_at, j.started_at, j.finished_at, j.result, r.session_id, j.agent"
+const snapshotColumns = "j.id, j.status, j.created_at, j.started_at, j.finished_at, COALESCE(j.codex_text_result, j.result), r.session_id, j.agent, j.unverified"
 
 type store struct {
 	db   *sql.DB
@@ -99,15 +101,21 @@ func openStore(ctx context.Context, path string, now time.Time) (*store, error) 
 			return nil, ErrUnavailable
 		}
 	}
-	var agentColumn int
-	if err := conn.QueryRowContext(ctx, `SELECT count(*) FROM pragma_table_info('delegate_jobs') WHERE name='agent'`).Scan(&agentColumn); err != nil {
-		_ = s.close()
-		return nil, ErrUnavailable
-	}
-	if agentColumn == 0 {
-		if _, err := conn.ExecContext(ctx, `ALTER TABLE delegate_jobs ADD COLUMN agent TEXT NOT NULL DEFAULT 'dummy' CHECK(agent IN ('dummy', 'codex'))`); err != nil {
+	for _, column := range []struct{ name, definition string }{
+		{"agent", "agent TEXT NOT NULL DEFAULT 'dummy' CHECK(agent IN ('dummy', 'codex'))"},
+		{"unverified", "unverified INTEGER NOT NULL DEFAULT 0 CHECK(unverified IN (0, 1))"},
+		{"codex_text_result", "codex_text_result TEXT"},
+	} {
+		var existing int
+		if err := conn.QueryRowContext(ctx, `SELECT count(*) FROM pragma_table_info('delegate_jobs') WHERE name=?`, column.name).Scan(&existing); err != nil {
 			_ = s.close()
 			return nil, ErrUnavailable
+		}
+		if existing == 0 {
+			if _, err := conn.ExecContext(ctx, "ALTER TABLE delegate_jobs ADD COLUMN "+column.definition); err != nil {
+				_ = s.close()
+				return nil, ErrUnavailable
+			}
 		}
 	}
 	if _, err := conn.ExecContext(ctx, `UPDATE delegate_jobs SET status='interrupted', finished_at=?
@@ -136,7 +144,7 @@ func readSnapshot(row scanner) (Snapshot, error) {
 	var created int64
 	var started, finished sql.NullInt64
 	var result, session sql.NullString
-	err := row.Scan(&job.JobID, &job.Status, &created, &started, &finished, &result, &session, &job.Agent)
+	err := row.Scan(&job.JobID, &job.Status, &created, &started, &finished, &result, &session, &job.Agent, &job.Unverified)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Snapshot{}, ErrNotFound
 	}

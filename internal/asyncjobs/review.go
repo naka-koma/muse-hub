@@ -204,7 +204,10 @@ func (s *store) priorJob(ctx context.Context, key, fingerprint [32]byte) (string
 }
 
 func (s *store) finish(ctx context.Context, id string, result any, status Status, job *activeJob, now time.Time) error {
-	const update = `UPDATE delegate_jobs SET status=?, finished_at=?, result=? WHERE id=?`
+	// Keep free-text output out of the legacy field read by older Hub versions.
+	const update = `UPDATE delegate_jobs SET status=?1, finished_at=?2,
+		result=CASE WHEN unverified=0 THEN ?3 END,
+		codex_text_result=CASE WHEN unverified=1 THEN ?3 END WHERE id=?4`
 	if job.reviewRounds == 0 || status != Succeeded {
 		_, err := s.conn.ExecContext(ctx, update, status, now.UnixMilli(), result, id)
 		return err

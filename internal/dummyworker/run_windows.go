@@ -45,7 +45,7 @@ func Run(ctx context.Context) (string, error) {
 	if err != nil {
 		return "", errors.New("could not locate the dummy worker")
 	}
-	tree, err := startTree(exe, parentArg)
+	tree, err := startTree(exe, 0, parentArg)
 	if err != nil {
 		return "", errors.New("could not start the isolated dummy process tree")
 	}
@@ -65,8 +65,8 @@ func Command(args []string) (int, bool) {
 	switch {
 	case len(args) == 2 && args[0] == parentArg:
 		return runDummyParent(args[1], leafArg), true
-	case len(args) == 5 && args[0] == codexParentArg:
-		return runCodexParent(args[4], args[1], args[2], args[3]), true
+	case len(args) == 6 && args[0] == codexParentArg:
+		return runCodexParent(args[5], args[1], args[2], args[3], args[4]), true
 	case len(args) == 1 && args[0] == leafArg:
 		time.Sleep(5 * time.Second)
 		return 2 + 3, true
@@ -85,13 +85,16 @@ func runDummyParent(cancelArg string, childArgs ...string) int {
 	if err != nil {
 		return 1
 	}
-	return runParent(cancelArg, exec.Command(exe, childArgs...), func(err error) bool {
+	return runParent(cancelArg, exec.Command(exe, childArgs...), func(err error) int {
 		var exit *exec.ExitError
-		return errors.As(err, &exit) && exit.ExitCode() == childSucceeded
+		if errors.As(err, &exit) && exit.ExitCode() == childSucceeded {
+			return childSucceeded
+		}
+		return childFailed
 	})
 }
 
-func runParent(cancelArg string, cmd *exec.Cmd, succeeded func(error) bool) int {
+func runParent(cancelArg string, cmd *exec.Cmd, exitCode func(error) int) int {
 	number, err := strconv.ParseUint(cancelArg, 10, strconv.IntSize)
 	if err != nil || number == 0 {
 		return 1
@@ -105,7 +108,8 @@ func runParent(cancelArg string, cmd *exec.Cmd, succeeded func(error) bool) int 
 	if initial == windows.WAIT_OBJECT_0 {
 		return parentCancelled
 	}
-	cmd.SysProcAttr = &syscall.SysProcAttr{CreationFlags: windows.CREATE_NO_WINDOW, NoInheritHandles: true}
+	// os/exec restricts inherited handles to the standard I/O handles it opens.
+	cmd.SysProcAttr = &syscall.SysProcAttr{CreationFlags: windows.CREATE_NO_WINDOW, NoInheritHandles: cmd.Stdin == nil}
 	if err := cmd.Start(); err != nil {
 		return 1
 	}
@@ -114,10 +118,7 @@ func runParent(cancelArg string, cmd *exec.Cmd, succeeded func(error) bool) int 
 	for {
 		select {
 		case err := <-done:
-			if succeeded(err) {
-				return childSucceeded
-			}
-			return childFailed
+			return exitCode(err)
 		default:
 		}
 		status, err := windows.WaitForSingleObject(cancel, 15)
@@ -135,7 +136,7 @@ func runParent(cancelArg string, cmd *exec.Cmd, succeeded func(error) bool) int 
 // childFailed records a normal wait for a worker that exited unsuccessfully.
 const childFailed = 3
 
-func startTree(exe string, args ...string) (*processTree, error) {
+func startTree(exe string, input windows.Handle, args ...string) (*processTree, error) {
 	job, err := windows.CreateJobObject(nil, nil)
 	if err != nil {
 		return nil, err
@@ -168,6 +169,11 @@ func startTree(exe string, args ...string) (*processTree, error) {
 		}
 	}()
 	command := append([]string{exe}, args...)
+	handles := []windows.Handle{cancel}
+	if input != 0 {
+		command = append(command, strconv.FormatUint(uint64(input), 10))
+		handles = append(handles, input)
+	}
 	command = append(command, strconv.FormatUint(uint64(cancel), 10))
 	line, err := windows.UTF16PtrFromString(windows.ComposeCommandLine(command))
 	if err != nil {
@@ -188,8 +194,8 @@ func startTree(exe string, args ...string) (*processTree, error) {
 	if err := attrs.Update(jobListAttribute, unsafe.Pointer(&job), unsafe.Sizeof(job)); err != nil {
 		return nil, err
 	}
-	// Inherit only the cancellation event, never standard I/O or other handles.
-	if err := attrs.Update(windows.PROC_THREAD_ATTRIBUTE_HANDLE_LIST, unsafe.Pointer(&cancel), unsafe.Sizeof(cancel)); err != nil {
+	// Inherit only the cancellation event and the optional job input pipe.
+	if err := attrs.Update(windows.PROC_THREAD_ATTRIBUTE_HANDLE_LIST, unsafe.Pointer(&handles[0]), uintptr(len(handles))*unsafe.Sizeof(cancel)); err != nil {
 		return nil, err
 	}
 	startup := windows.StartupInfoEx{ProcThreadAttributeList: attrs.List()}
@@ -260,7 +266,7 @@ func (t *processTree) stop() error {
 		var exit uint32
 		if windows.GetExitCodeProcess(t.process, &exit) == nil {
 			switch exit {
-			case parentCancelled, childSucceeded, childFailed:
+			case parentCancelled, childSucceeded, childFailed, codexRateLimit:
 				return nil
 			}
 		}
