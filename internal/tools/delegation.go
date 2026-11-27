@@ -14,7 +14,7 @@ import (
 )
 
 type DelegateInput struct {
-	Agent        string   `json:"agent" jsonschema:"use dummy for the Phase 2 probe"`
+	Agent        string   `json:"agent" jsonschema:"use dummy, or codex when the Codex probe is enabled"`
 	Task         string   `json:"task" jsonschema:"use 2 + 3 for the Phase 2 probe"`
 	Context      string   `json:"context" jsonschema:"use an empty string for the Phase 2 probe"`
 	DataCategory []string `json:"data_category" jsonschema:"use [code] for the Phase 2 probe"`
@@ -32,9 +32,13 @@ type ListJobsOutput struct {
 }
 
 func RegisterDelegation(server *mcp.Server, manager *asyncjobs.Manager, logger *slog.Logger, rules *policy.Policy, approvals bool,
-	runner func(context.Context) (string, error)) {
-	if runner == nil {
-		runner = runDummyDelegation
+	dummyRunner, codexRunner func(context.Context) (string, error)) {
+	if dummyRunner == nil {
+		dummyRunner = runDummyDelegation
+	}
+	description := "Start an asynchronous dummy job and return its ID. Use agent dummy, task 2 + 3, empty context, and data_category [code]."
+	if codexRunner != nil {
+		description += " Use agent codex to send the same fixed arithmetic probe to Codex."
 	}
 	gate := policyGate{policy: rules, manager: manager}
 	if rules != nil {
@@ -46,14 +50,19 @@ func RegisterDelegation(server *mcp.Server, manager *asyncjobs.Manager, logger *
 	}
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "delegate",
-		Description: "Start a persisted asynchronous Phase 2 dummy job and return its ID. Use agent dummy, task 2 + 3, empty context, and data_category [code].",
+		Description: description,
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, input DelegateInput) (*mcp.CallToolResult, StartJobOutput, error) {
 		started := time.Now()
 		resource := input.Resource
 		if resource == "" {
 			resource = arithmeticResource
 		}
-		verified := input.Agent == "dummy" && strings.TrimSpace(input.Task) == "2 + 3" && input.Context == "" &&
+		runner, workKey := dummyRunner, "synthetic-sum-v1"
+		if input.Agent == "codex" {
+			runner, workKey = codexRunner, "codex-synthetic-sum-v1"
+		}
+		supported := input.Agent == "dummy" || input.Agent == "codex" && runner != nil
+		verified := supported && strings.TrimSpace(input.Task) == "2 + 3" && input.Context == "" &&
 			len(input.DataCategory) == 1 && input.DataCategory[0] == "code" && resource == arithmeticResource
 		if err := gate.check(ctx, "delegate", policy.Access{
 			Agent: input.Agent, Operation: "consult", Resource: resource,
@@ -66,7 +75,7 @@ func RegisterDelegation(server *mcp.Server, manager *asyncjobs.Manager, logger *
 			return nil, StartJobOutput{}, asyncjobs.ErrInvalidInput
 		}
 		id, err := manager.Submit(ctx, asyncjobs.Submission{
-			RequestID: input.RequestID, Session: input.Session, WorkKey: "synthetic-sum-v1", Run: runner,
+			RequestID: input.RequestID, Session: input.Session, Agent: input.Agent, WorkKey: workKey, Run: runner,
 		})
 		logDelegation(logger, "delegate", id, started, err)
 		return nil, StartJobOutput{JobID: id}, err
@@ -92,7 +101,7 @@ func RegisterDelegation(server *mcp.Server, manager *asyncjobs.Manager, logger *
 				}
 				out.Result, out.Review = nil, &summary
 			}
-		} else if err := gate.check(ctx, "get_result", arithmeticRead(), true); err != nil {
+		} else if err := gate.check(ctx, "get_result", arithmeticRead(job.Agent), true); err != nil {
 			return nil, JobResultOutput{}, err
 		}
 		logDelegation(logger, "get_result", job.JobID, started, err)
@@ -116,10 +125,15 @@ func RegisterDelegation(server *mcp.Server, manager *asyncjobs.Manager, logger *
 		Name: "list_jobs", Description: "Return the latest 100 delegated job summaries without their result bodies.",
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, _ struct{}) (*mcp.CallToolResult, ListJobsOutput, error) {
 		started := time.Now()
-		if err := gate.check(ctx, "list_jobs", arithmeticRead(), true); err != nil {
+		if err := gate.check(ctx, "list_jobs", arithmeticRead("dummy"), true); err != nil {
 			return nil, ListJobsOutput{}, err
 		}
 		list, err := manager.List(ctx)
+		if err == nil && slices.ContainsFunc(list, func(job asyncjobs.Snapshot) bool { return job.Agent == "codex" }) {
+			if err := gate.check(ctx, "list_jobs", arithmeticRead("codex"), true); err != nil {
+				list = slices.DeleteFunc(list, func(job asyncjobs.Snapshot) bool { return job.Agent == "codex" })
+			}
+		}
 		if err == nil && slices.ContainsFunc(list, func(job asyncjobs.Snapshot) bool { return job.ReviewSession != "" }) {
 			if err := gate.checkReviewRead(ctx, "list_review_jobs"); err != nil {
 				list = slices.DeleteFunc(list, func(job asyncjobs.Snapshot) bool { return job.ReviewSession != "" })

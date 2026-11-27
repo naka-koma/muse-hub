@@ -60,7 +60,7 @@ func (g policyGate) register(server *mcp.Server) {
 	})
 }
 
-func arithmeticRead() policy.Access {
-	return policy.Access{Agent: "dummy", Operation: "read", Resource: arithmeticResource,
+func arithmeticRead(agent string) policy.Access {
+	return policy.Access{Agent: agent, Operation: "read", Resource: arithmeticResource,
 		Portions: []policy.Portion{{Categories: []string{"code"}, Level: policy.Full}}}
 }

@@ -57,7 +57,7 @@ func TestProcessTreeFixture(t *testing.T) {
 		if len(os.Args) != 5 {
 			os.Exit(1)
 		}
-		os.Exit(runParent(os.Args[4], "-test.run=^TestProcessTreeFixture$", "--", "child"))
+		os.Exit(runDummyParent(os.Args[4], "-test.run=^TestProcessTreeFixture$", "--", "child"))
 	case "child":
 		<-time.After(10 * time.Second)
 		os.Exit(5)

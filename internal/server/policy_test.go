@@ -26,10 +26,11 @@ func TestPolicyMCPAndAudit(t *testing.T) {
 	}
 	defer jobs.Close()
 
-	withPolicy := func(read bool, exercise func(call func(string, map[string]any) *mcp.CallToolResult)) {
+	withPolicy := func(read bool, agents map[string]map[string]policy.Level, exercise func(call func(string, map[string]any) *mcp.CallToolResult)) {
 		t.Helper()
 		rules, err := policy.FromConfig(policy.Config{
 			Version: 1, Data: map[string]policy.Level{"code": policy.Full, "creative": policy.Summary},
+			Agents:    agents,
 			Execution: policy.Execution{Read: read, Consult: true}, Resources: []string{"arithmetic"},
 		})
 		if err != nil {
@@ -63,7 +64,7 @@ func TestPolicyMCPAndAudit(t *testing.T) {
 		}
 	}
 	var id string
-	withPolicy(true, func(call func(string, map[string]any) *mcp.CallToolResult) {
+	withPolicy(true, nil, func(call func(string, map[string]any) *mcp.CallToolResult) {
 		in := map[string]any{"agent": "dummy", "task": "2 + 3", "context": "", "request_id": "fixture"}
 		for _, item := range []struct {
 			category []string
@@ -102,12 +103,30 @@ func TestPolicyMCPAndAudit(t *testing.T) {
 			t.Fatal("policy audit counts or grants status are wrong")
 		}
 	})
-	withPolicy(false, func(call func(string, map[string]any) *mcp.CallToolResult) {
+	withPolicy(false, nil, func(call func(string, map[string]any) *mcp.CallToolResult) {
 		checkDenied(call("get_result", map[string]any{"job_id": id}), policy.OperationDenied)
 		checkDenied(call("list_jobs", map[string]any{}), policy.OperationDenied)
 		result := call("cancel_job", map[string]any{"job_id": id})
 		if result.IsError || result.StructuredContent.(map[string]any)["result"] != nil {
 			t.Fatal("cancel exposed the result despite read being disabled")
+		}
+	})
+	codexID, err := jobs.Submit(t.Context(), asyncjobs.Submission{
+		RequestID: "codex-fixture", Agent: "codex", WorkKey: "synthetic-codex",
+		Run: func(context.Context) (string, error) { return "5", nil },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	withPolicy(true, map[string]map[string]policy.Level{"codex": {"code": policy.None}}, func(call func(string, map[string]any) *mcp.CallToolResult) {
+		checkDenied(call("get_result", map[string]any{"job_id": codexID}), policy.DisclosureDeny)
+		result := call("list_jobs", map[string]any{})
+		if result.IsError {
+			t.Fatal("Codex restriction blocked the dummy job list")
+		}
+		list := result.StructuredContent.(map[string]any)["jobs"].([]any)
+		if len(list) != 1 || list[0].(map[string]any)["job_id"] != id {
+			t.Fatal("job list exposed a restricted agent or hid the allowed job")
 		}
 	})
 	if err := jobs.Close(); err != nil {

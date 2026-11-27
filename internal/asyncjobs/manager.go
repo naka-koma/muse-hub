@@ -51,12 +51,14 @@ type Snapshot struct {
 	FinishedAt    *time.Time `json:"finished_at,omitempty"`
 	Result        *string    `json:"result,omitempty"`
 	ReviewSession string     `json:"session_id,omitempty"`
+	Agent         string     `json:"-"`
 }
 
 type Submission struct {
 	RequestID string
 	Session   string
 	WorkKey   string
+	Agent     string
 	// Run must return only after its work has stopped, or report ErrStopUnconfirmed.
 	Run func(context.Context) (string, error)
 }
@@ -93,8 +95,11 @@ func Open(ctx context.Context, path string, timeout time.Duration) (*Manager, er
 }
 
 func (m *Manager) Submit(ctx context.Context, input Submission) (string, error) {
+	if input.Agent == "" {
+		input.Agent = "dummy"
+	}
 	if !idPattern.MatchString(input.RequestID) || (input.Session != "" && !idPattern.MatchString(input.Session)) ||
-		input.WorkKey == "" || input.Run == nil {
+		input.WorkKey == "" || input.Run == nil || (input.Agent != "dummy" && input.Agent != "codex") {
 		return "", ErrInvalidInput
 	}
 	requestKey := sha256.Sum256([]byte(input.RequestID))
@@ -115,8 +120,8 @@ func (m *Manager) Submit(ctx context.Context, input Submission) (string, error) 
 	if err != nil {
 		return "", err
 	}
-	if _, err := m.store.conn.ExecContext(ctx, `INSERT INTO delegate_jobs(id, request_key, fingerprint, status, created_at)
-		VALUES (?, ?, ?, 'queued', ?)`, id, requestKey[:], fingerprint[:], m.now().UnixMilli()); err != nil {
+	if _, err := m.store.conn.ExecContext(ctx, `INSERT INTO delegate_jobs(id, request_key, fingerprint, status, created_at, agent)
+		VALUES (?, ?, ?, 'queued', ?, ?)`, id, requestKey[:], fingerprint[:], m.now().UnixMilli(), input.Agent); err != nil {
 		return "", ErrUnavailable
 	}
 	m.start(id, input.Session, 0, input.Run)
@@ -238,7 +243,7 @@ func (m *Manager) List(ctx context.Context) ([]Snapshot, error) {
 	if err := m.ready(ctx); err != nil {
 		return nil, err
 	}
-	rows, err := m.store.conn.QueryContext(ctx, `SELECT j.id, j.status, j.created_at, j.started_at, j.finished_at, NULL, r.session_id
+	rows, err := m.store.conn.QueryContext(ctx, `SELECT j.id, j.status, j.created_at, j.started_at, j.finished_at, NULL, r.session_id, j.agent
 		FROM delegate_jobs j LEFT JOIN review_jobs r ON r.job_id=j.id ORDER BY j.created_at DESC, j.id DESC LIMIT ?`, HistoryLimit)
 	if err != nil {
 		return nil, ErrUnavailable

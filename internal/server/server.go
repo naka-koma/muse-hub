@@ -20,13 +20,14 @@ type Features struct {
 	Policy         *policy.Policy
 	Approvals      bool
 	DelegateRunner func(context.Context) (string, error)
+	CodexRunner    func(context.Context) (string, error)
 }
 
 func NewHandler(authConfig auth.Config, tailscaleHost string, logger *slog.Logger, features Features) http.Handler {
 	server := mcp.NewServer(&mcp.Implementation{Name: "muse-hub", Version: "0.1.0"}, nil)
 	if features.Jobs != nil {
 		tools.Register(server, nil, logger)
-		tools.RegisterDelegation(server, features.Jobs, logger, features.Policy, features.Approvals, features.DelegateRunner)
+		tools.RegisterDelegation(server, features.Jobs, logger, features.Policy, features.Approvals, features.DelegateRunner, features.CodexRunner)
 	} else {
 		tools.Register(server, jobs.NewManager(), logger)
 		if features.Ask != nil {
