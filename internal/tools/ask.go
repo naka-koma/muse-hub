@@ -42,7 +42,7 @@ func NewAsk(agent string, timeout time.Duration, run func(context.Context, AskIn
 func (a *Ask) Register(server *mcp.Server, logger *slog.Logger) {
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "ask",
-		Description: "Phase 1 synthetic probe: ask claude to solve 2 + 3, with an empty context and data_category [code].",
+		Description: "Ask the isolated Claude adapter to solve the fixed 2 + 3 probe with empty context and data_category [code].",
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, input AskInput) (*mcp.CallToolResult, AskOutput, error) {
 		started := time.Now()
 		answer, outcome, err := a.call(ctx, input)

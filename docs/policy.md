@@ -1,12 +1,12 @@
-# Phase 3 policy and audit check
+# Disclosure policy and audit
 
-English | [日本語](phase3-policy.ja.md)
+English | [日本語](policy.ja.md)
 
-The policy applies to the [asynchronous dummy job](phase2-jobs.md). Run the same fixed question throughout this check. No external agent receives the input.
+The policy applies to the [asynchronous dummy job](jobs.md). Run the same fixed question throughout this check. No external agent receives the input.
 
 ## Load a policy
 
-Save the following as `policy.yaml` outside the repository. Set `MUSE_HUB_PHASE3_POLICY` to that path in the PowerShell session that starts the Hub. Keep the Phase 2 database setting enabled. Invalid YAML prevents startup.
+Save the example as `policy.yaml` outside the repository. Set `MUSE_HUB_POLICY_FILE` to its path before starting the Hub with `MUSE_HUB_JOBS_DB`. Invalid YAML prevents startup.
 
 ```yaml
 version: 1
@@ -30,8 +30,8 @@ Resource names are logical aliases. They cannot grant filesystem access. `consul
 
 ## Check refusals and audit counts
 
-Call `delegate` as in the Phase 2 guide, then try an unknown category or `work`. Both calls should be denied. Use a fresh `request_id` for a new job. With `read: false`, an otherwise valid result is withheld after the Hub restarts. Cancellation remains available and returns status without the answer.
+Follow the [dummy job example](jobs.md#check-delegation-with-a-dummy-job). Then try an unknown category or `work`. Both calls should be denied. Use a fresh `request_id` for a new job. With `read: false`, an otherwise valid result is withheld after the Hub restarts. Cancellation remains available and returns status without the answer.
 
 `list_policy` returns the effective settings, a revision ID, and aggregate audit counts. The database records the timestamp, operation, revision, known category and disclosure level when available, and decision. It omits request text, results, and raw unknown category names from the audit table. The audit count can span multiple revisions.
 
-See [Phase 4 sessions and review](phase4-review.md) to check the same policy on transfers between dummy adapters.
+See [sessions and review](review.md) to check the same policy on transfers between dummy adapters.

@@ -1,8 +1,8 @@
-# Phase 5 policy proposals and approval
+# Policy proposals and approval
 
-English | [日本語](phase5-approval.ja.md)
+English | [日本語](policy-approval.ja.md)
 
-Start with the [Phase 3 policy and job database](phase3-policy.md). Set `MUSE_HUB_PHASE5_APPROVALS=1` before starting the Hub. The first start copies the YAML policy into the local database. Later starts use the effective policy from that database. Keep the YAML path configured.
+Configure the [disclosure policy and job database](policy.md). Set `MUSE_HUB_POLICY_APPROVALS=1` before starting the Hub. The first start copies the YAML policy into the local database. Later starts use the effective policy from that database. Keep the YAML path configured.
 
 ## Propose a change
 
@@ -24,7 +24,7 @@ The reason is a code: `reduce_disclosure`, `review_access`, or `maintenance`. Th
 
 ## Review and decide locally
 
-Stop the Hub first. On the PC that owns the job database, keep `MUSE_HUB_PHASE2_DB` pointed at that file. Review the current policy and the proposed candidate before deciding.
+Stop the Hub first. On the PC that owns the job database, keep `MUSE_HUB_JOBS_DB` pointed at that file. Review the current policy and the proposed candidate before deciding.
 
 ```powershell
 go run ./cmd/muse-hub policy current

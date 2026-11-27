@@ -6,7 +6,6 @@ import (
 	"errors"
 	"io"
 	"os"
-	"strings"
 	"time"
 
 	"github.com/nakakoma/muse-hub/internal/asyncjobs"
@@ -33,10 +32,13 @@ func runPolicyCommand(ctx context.Context, args []string, output io.Writer) erro
 	default:
 		return errPolicyUsage
 	}
-	path := strings.TrimSpace(os.Getenv("MUSE_HUB_PHASE2_DB"))
+	path, err := jobsDBSetting()
+	if err != nil {
+		return err
+	}
 	info, err := os.Stat(path)
 	if err != nil || !info.Mode().IsRegular() {
-		return errors.New("set MUSE_HUB_PHASE2_DB to the existing Hub job database")
+		return errors.New("set MUSE_HUB_JOBS_DB to the existing Hub job database")
 	}
 	ctx, stop := context.WithTimeout(ctx, 10*time.Second)
 	defer stop()

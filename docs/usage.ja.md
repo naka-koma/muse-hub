@@ -13,20 +13,34 @@
 | `MUSE_HUB_AUTH_SCHEME` | `Bearer` | `Bearer`の場合は`Bearer <token>`。それ以外は値としてトークンだけを送信 |
 | `MUSE_HUB_PORT` | `8787` | ローカル待受ポート（1〜65535） |
 | `MUSE_HUB_TAILSCALE_HOST` | 未設定 | Serve経由の接続を許可するTailscaleのホスト名。HTTPSポートが443以外なら`:ポート番号`を付けます。 |
-| `MUSE_HUB_PHASE1_AUTH_VOLUME` | 未設定 | 専用のDockerログインボリューム。設定すると [Phase 1の `ask` 検証](phase1-isolation.ja.md) を有効にします。 |
-| `MUSE_HUB_PHASE2_DB` | 未設定 | SQLiteファイルの保存先。設定すると [Phase 2の非同期ジョブ検証](phase2-jobs.ja.md) を有効にします。 |
-| `MUSE_HUB_PHASE2_SUBPROCESS` | 未設定 | Windowsで `1` を指定すると、ダミージョブを子プロセスで実行します。ジョブDBの設定も必要です。 |
-| `MUSE_HUB_CODEX_EXE` | 未設定 | [Codexへの委譲検証](phase2-jobs.ja.md#windowsでcodexへの委譲を確認する) に使うWindows版 `codex.exe` の絶対パス。 |
+| `MUSE_HUB_JOBS_DB` | 未設定 | [委譲ジョブの履歴と回答](jobs.ja.md) を保存するSQLiteファイルのパス。 |
+| `MUSE_HUB_DUMMY_SUBPROCESS` | 未設定 | Windowsで `1` を指定すると、ダミージョブを子プロセスで実行します。ジョブDBの設定も必要です。 |
+| `MUSE_HUB_CODEX_EXE` | 未設定 | [Codexへの委譲検証](jobs.ja.md#windowsでcodexへの委譲を確認する) に使うWindows版 `codex.exe` の絶対パス。 |
 | `MUSE_HUB_CODEX_HOME` | 未設定 | Codex専用ログインディレクトリの絶対パス。実行ファイルとジョブDBの設定も必要です。 |
-| `MUSE_HUB_CODEX_TEXT` | 未設定 | ポリシーを読み込んでいないHubで `1` を指定すると、[文章や文脈をCodexに送れます](phase2-jobs.ja.md#文章や文脈をcodexに送る)。 |
-| `MUSE_HUB_CLAUDE_AUTH_VOLUME` | 未設定 | [Claudeへの非同期委譲](phase2-jobs.ja.md#claudeに委譲する) に使う専用Dockerログインボリューム。ジョブDBの設定も必要です。 |
+| `MUSE_HUB_CODEX_TEXT` | 未設定 | ポリシーを読み込んでいないHubで `1` を指定すると、[文章や文脈をCodexに送れます](jobs.ja.md#文章や文脈をcodexに送る)。 |
+| `MUSE_HUB_CLAUDE_AUTH_VOLUME` | 未設定 | [Claudeへの非同期委譲](jobs.ja.md#claudeに委譲する) に使う専用Dockerログインボリューム。ジョブDBの設定も必要です。 |
 | `MUSE_HUB_CLAUDE_TEXT` | 未設定 | ポリシーを読み込んでいないHubで `1` を指定すると、文章や文脈をClaudeに送れます。 |
-| `MUSE_HUB_PHASE3_POLICY` | 未設定 | [Phase 3のポリシーと監査](phase3-policy.ja.md) に使うYAMLのパス。ジョブDBの設定も必要です。 |
-| `MUSE_HUB_PHASE5_APPROVALS` | 未設定 | `1` で [ポリシー提案とローカル承認](phase5-approval.ja.md) を有効にします。ポリシーとジョブDBの設定も必要です。 |
+| `MUSE_HUB_CLAUDE_ASK_VOLUME` | 未設定 | [`ask` の同期応答を確認する](claude-isolation.ja.md#ask-で同期応答を確認する) ときに使う専用ボリューム。ジョブDBは未設定にします。 |
+| `MUSE_HUB_POLICY_FILE` | 未設定 | [開示ポリシーと監査](policy.ja.md) に使うYAMLのパス。ジョブDBの設定も必要です。 |
+| `MUSE_HUB_POLICY_APPROVALS` | 未設定 | `1` で [ポリシー提案とローカル承認](policy-approval.ja.md) を有効にします。ポリシーとジョブDBの設定も必要です。 |
 
 Museがカスタムコネクタでどの形式を送れるかは、このサーバーだけでは確定できません。`Authorization: Bearer`が通らない場合は、Muse側で確認した形式に合わせてヘッダー設定を変更してください。
 
 実行ファイルを作らずに起動するには、トークンを設定し、リポジトリのルートで `go run ./cmd/muse-hub` を実行します。起動に失敗した場合はトークンの長さとポートの設定を確認し、同じポートを別のプロセスが使っていないか調べてください。
+
+### 既存の設定を移す
+
+Hubの起動設定を新しい名前に置き換えます。既存のSQLiteファイルとDockerログインボリュームはそのまま使えます。旧名も使えますが、同じ項目の新旧に異なる値を設定するとHubは起動を拒否します。
+
+| 旧名 | 新しい名前 |
+| --- | --- |
+| `MUSE_HUB_PHASE1_AUTH_VOLUME` | `MUSE_HUB_CLAUDE_ASK_VOLUME` |
+| `MUSE_HUB_PHASE2_DB` | `MUSE_HUB_JOBS_DB` |
+| `MUSE_HUB_PHASE2_SUBPROCESS` | `MUSE_HUB_DUMMY_SUBPROCESS` |
+| `MUSE_HUB_PHASE3_POLICY` | `MUSE_HUB_POLICY_FILE` |
+| `MUSE_HUB_PHASE5_APPROVALS` | `MUSE_HUB_POLICY_APPROVALS` |
+
+Docker Composeで準備するときは、既存のログインボリュームを `MUSE_HUB_CLAUDE_AUTH_VOLUME` に指定します。詳しくは [Claudeのセットアップ](claude-isolation.ja.md) を参照してください。
 
 ## セキュリティとデータの扱い
 
@@ -34,7 +48,7 @@ Museがカスタムコネクタでどの形式を送れるかは、このサー�
 - ログにはツール名、許可・拒否、job ID、処理時間を記録します。トークン、ヘッダー、`echo`の入力は記録しません。
 - 既定のツールは、ダミーデータをサーバー内で処理します。任意で有効にするワーカーの設定と入力制限は、各検証手順を参照してください。
 
-## ツール
+## 既定のツール
 
 | ツール | 入力 | 成功時の戻り値 |
 | --- | --- | --- |
@@ -44,6 +58,7 @@ Museがカスタムコネクタでどの形式を送れるかは、このサー�
 | `get_result` | `job_id` | `queued` / `running` / `succeeded`。完了時のみ固定結果と開始・完了時刻 |
 
 存在しないIDは`job_not_found`を返し、スタックトレースは公開しません。ジョブの状態と結果はプロセスのメモリ内にだけ保存され、再起動で消えます。
+ジョブの保存やClaudeとCodexへの依頼は、[ジョブの委譲と結果取得](jobs.ja.md) の手順で有効にできます。
 同時に実行できるジョブは最大5件です。完了結果は1時間保持します。
 
 ## 手元から疎通確認

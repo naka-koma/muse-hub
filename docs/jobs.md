@@ -1,8 +1,8 @@
-# Phase 2 asynchronous job check
+# Delegation and job results
 
-English | [日本語](phase2-jobs.ja.md)
+English | [日本語](jobs.ja.md)
 
-Phase 2 checks asynchronous jobs with a fixed synthetic question. By default, the worker runs inside the Hub and returns `5` after about a second.
+Use `delegate` to submit a job and `get_result` to retrieve its answer. Enable Claude or Codex to send jobs to those agents. The built-in dummy worker returns `5` for a test question.
 
 ## Start the Hub
 
@@ -11,13 +11,13 @@ Set `MUSE_HUB_TOKEN` as described in the [README](../README.md). In the same Pow
 ```powershell
 $jobDir = Join-Path $env:LOCALAPPDATA 'MuseHub'
 New-Item -ItemType Directory -Path $jobDir -Force | Out-Null
-$env:MUSE_HUB_PHASE2_DB = Join-Path $jobDir 'phase2-jobs.sqlite'
+$env:MUSE_HUB_JOBS_DB = Join-Path $jobDir 'muse-jobs.sqlite'
 go run ./cmd/muse-hub
 ```
 
-Leave `MUSE_HUB_PHASE1_AUTH_VOLUME` unset. Phase 2 provides `ping` and `echo` alongside `delegate`, `get_result`, `cancel_job`, and `list_jobs`. Use the [Tailscale Serve instructions](usage.md#tailscale-serve) to connect from Muse.
+Leave `MUSE_HUB_CLAUDE_ASK_VOLUME` unset to use `delegate`. Follow the [Tailscale Serve instructions](usage.md#tailscale-serve) to connect from Muse.
 
-## Call the tools
+## Check delegation with a dummy job
 
 Call `delegate` with these arguments. Generate a new opaque `request_id` for each new job and reuse it only when retrying the same request. The optional `session` limits that session to one active job.
 
@@ -33,7 +33,7 @@ Call `delegate` with these arguments. Generate a new opaque `request_id` for eac
 
 ## Verify child process cancellation on Windows
 
-Set `MUSE_HUB_PHASE2_SUBPROCESS=1` before starting the Hub with the job database. This uses the same fixture and runs for about five seconds. The Hub starts a fixed helper and its child inside a Windows Job Object. No tool argument is used as a command, and the helper does not inherit the Hub token.
+Set `MUSE_HUB_DUMMY_SUBPROCESS=1` before starting the Hub with the job database. This uses the same fixture and runs for about five seconds. The Hub starts a fixed helper and its child inside a Windows Job Object. No tool argument is used as a command, and the helper does not inherit the Hub token.
 
 Submit the fixture with a fresh `request_id` and call `cancel_job` with the returned ID while it is running. `cancelled` means that the helper waited for its child and the Hub confirmed that the process tree stopped. If the Hub cannot confirm the stop, the job reports `failed`. Turning off this setting restores the in-process worker.
 
@@ -55,6 +55,6 @@ Submit only text you can share with Codex. The CLI gets the text over standard i
 
 ## Delegate to Claude
 
-Prepare the [isolated Claude container](phase1-isolation.md) and keep its Compose proxy running. To enable asynchronous Claude jobs, configure `MUSE_HUB_CLAUDE_AUTH_VOLUME` and the job database. Set `MUSE_HUB_CLAUDE_TEXT=1` to allow tasks and context on a Hub without a disclosure policy. The input and output limits are the same as for Codex. Claude runs one job at a time.
+Prepare the [isolated Claude container](claude-isolation.md) and keep its Compose proxy running. To enable asynchronous Claude jobs, configure `MUSE_HUB_CLAUDE_AUTH_VOLUME` and the job database. Set `MUSE_HUB_CLAUDE_TEXT=1` to allow tasks and context on a Hub without a disclosure policy. The input and output limits are the same as for Codex. Claude runs one job at a time.
 
 Use `agent: "claude"` with `delegate`, then pass its job ID to `get_result`. The adapter sends prompts over standard input, disables Claude's tools and connectors, and removes the job container when finished or cancelled.

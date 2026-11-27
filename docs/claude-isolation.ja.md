@@ -1,8 +1,8 @@
-# Phase 1の隔離検証
+# Claudeの隔離環境を準備する
 
-[English](phase1-isolation.md) | 日本語
+[English](claude-isolation.md) | 日本語
 
-Phase 1では、Dockerで隔離したClaude Codeがダミーの質問に回答できるかを確認します。Claudeには本人のアカウントでログインし、認証情報は専用のDockerボリュームに保存します。コンテナを単体で確認してから、Hubの `ask` を有効にできます。
+Claude CodeはDockerコンテナ内で実行します。自分のClaudeアカウントでログインしてください。認証情報は専用のDockerボリュームに保存します。
 
 ## 隔離の範囲
 
@@ -10,15 +10,17 @@ Phase 1では、Dockerで隔離したClaude Codeがダミーの質問に回答�
 - 質問を送るときは、組み込みツール、MCPサーバー、Claudeアカウントのコネクタ、フック、スキル、セッション保存を無効にします。ログイン情報は専用ボリュームに残ります。
 - CLIはDockerの内部ネットワークに接続します。別コンテナのプロキシは、指定したAnthropicのホスト宛てに443番ポートのHTTPSトンネルを許可します。プロキシのポートは公開しません。判定するのはCONNECTの宛先で、TLS内のHTTPパスは検査しません。
 
-## 検証手順
+## ビルドとログイン
 
 Docker DesktopでLinuxコンテナとDocker Composeを使います。リポジトリのルートでPowerShell 7を開きます。
 
 ```powershell
-$phase1 = @('-p', 'muse-phase1-check', '-f', 'experiments/phase1/compose.yaml')
-docker volume create muse-phase1-claude-auth
-docker compose @phase1 build
-docker compose @phase1 run --rm -T --entrypoint node claude /opt/verify.mjs
+$claudeCompose = @('-f', 'deploy/claude/compose.yaml')
+$env:MUSE_HUB_CLAUDE_AUTH_VOLUME = 'muse-hub-claude-auth'
+docker volume create $env:MUSE_HUB_CLAUDE_AUTH_VOLUME
+docker compose @claudeCompose build
+docker compose @claudeCompose up -d proxy
+docker compose @claudeCompose run --rm -T --entrypoint node claude /opt/verify.mjs
 ```
 
 ファイルと認証情報の境界、デフォルト経路がないこと、許可外のホストとポートの拒否、許可した2つのホストへのTLS接続を確認します。このコマンドはモデルを呼び出しません。
@@ -26,24 +28,29 @@ docker compose @phase1 run --rm -T --entrypoint node claude /opt/verify.mjs
 コンテナ内でログインします。CLIの案内に従ってブラウザーで認証してください。ログイン情報はこの検証専用のDockerボリュームに保存されます。
 
 ```powershell
-docker compose @phase1 run --rm claude auth login --claudeai
+docker compose @claudeCompose run --rm claude auth login --claudeai
 ```
 
 ダミーの質問を送ります。期待する回答は `5` です。
 
 ```powershell
-$phase1Settings = '{"disableAllHooks":true,"disableClaudeAiConnectors":true}'
-docker compose @phase1 run --rm -T claude --print 'What is 2 + 3? Reply with only the digit.' `
+$claudeSettings = '{"disableAllHooks":true,"disableClaudeAiConnectors":true}'
+docker compose @claudeCompose run --rm -T claude --print 'What is 2 + 3? Reply with only the digit.' `
   --tools '' --strict-mcp-config --setting-sources '' --disable-slash-commands `
-  --settings $phase1Settings --no-session-persistence --max-turns 1
+  --settings $claudeSettings --no-session-persistence --max-turns 1
 ```
 
-## Hubで `ask` を有効にする
+## Hubに接続する
+
+Composeのプロキシを起動したまま、[Claudeへの委譲](jobs.ja.md#claudeに委譲する) を設定します。
+
+### `ask` で同期応答を確認する
 
 Composeのプロキシを起動したままにします。Hubを起動するPowerShellで、[README](../README.ja.md) の手順どおりにトークンを設定します。続いてログイン用のボリューム名を設定し、サーバーを起動します。
 
 ```powershell
-$env:MUSE_HUB_PHASE1_AUTH_VOLUME = 'muse-phase1-claude-auth'
+$env:MUSE_HUB_CLAUDE_ASK_VOLUME = $env:MUSE_HUB_CLAUDE_AUTH_VOLUME
+Remove-Item Env:MUSE_HUB_CLAUDE_AUTH_VOLUME
 go run ./cmd/muse-hub
 ```
 
@@ -55,6 +62,6 @@ Museで試す場合は、[Tailscale Serveの手順](usage.ja.md#tailscale-serve)
 {"agent":"claude","task":"2 + 3","context":"","data_category":["code"]}
 ```
 
-期待する結果は `{"answer":"5"}` です。Phase 1で受け付けるのはこのダミーの質問だけです。Hubは固定の質問文をClaudeに送ります。
+`ask` は固定の質問だけを受け付けます。期待する応答は `{"answer":"5"}` です。
 
-検証が終わったらHubを停止し、`docker compose @phase1 down` を実行します。ログイン情報も削除する場合は、コンテナの停止後に `docker volume rm muse-phase1-claude-auth` を実行してください。
+Claudeのワーカーを止めるには、Hubを停止して `docker compose @claudeCompose down` を実行します。ログイン情報を削除する場合は、コンテナを停止してから専用のボリュームを削除します。

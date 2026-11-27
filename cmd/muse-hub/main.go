@@ -17,8 +17,8 @@ import (
 
 	"github.com/nakakoma/muse-hub/internal/asyncjobs"
 	"github.com/nakakoma/muse-hub/internal/auth"
+	"github.com/nakakoma/muse-hub/internal/claude"
 	"github.com/nakakoma/muse-hub/internal/dummyworker"
-	"github.com/nakakoma/muse-hub/internal/phase1"
 	"github.com/nakakoma/muse-hub/internal/policy"
 	"github.com/nakakoma/muse-hub/internal/server"
 	"github.com/nakakoma/muse-hub/internal/tools"
@@ -48,29 +48,29 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	var features server.Features
-	if cfg.phase3Policy != "" {
-		features.Policy, err = policy.Load(cfg.phase3Policy)
+	if cfg.policyFile != "" {
+		features.Policy, err = policy.Load(cfg.policyFile)
 		if err != nil {
-			logger.Error("Phase 3 startup rejected", "error", err.Error())
+			logger.Error("policy configuration rejected", "error", err.Error())
 			os.Exit(1)
 		}
 	}
-	if cfg.phase1Volume != "" {
+	if cfg.claudeAskVolume != "" {
 		startup, cancel := context.WithTimeout(ctx, 30*time.Second)
-		adapter, err := phase1.NewClaude(startup, cfg.phase1Volume)
+		adapter, err := claude.NewClaude(startup, cfg.claudeAskVolume)
 		cancel()
 		if err != nil {
-			logger.Error("Phase 1 startup rejected", "error", err.Error())
+			logger.Error("Claude ask startup rejected", "error", err.Error())
 			os.Exit(1)
 		}
 		features.Ask, err = tools.NewAsk("claude", 35*time.Second, adapter.Ask)
 		if err != nil {
-			logger.Error("Phase 1 startup rejected", "error", err.Error())
+			logger.Error("Claude ask startup rejected", "error", err.Error())
 			os.Exit(1)
 		}
 	}
-	if cfg.phase2DB != "" {
-		if cfg.phase2Subprocess {
+	if cfg.jobsDB != "" {
+		if cfg.dummySubprocess {
 			features.DelegateRunner = dummyworker.Run
 		}
 		if cfg.codexExe != "" {
@@ -90,14 +90,14 @@ func main() {
 		features.CodexText = cfg.codexText
 		if cfg.claudeVolume != "" {
 			startup, cancel := context.WithTimeout(ctx, 20*time.Second)
-			claude, err := phase1.NewClaude(startup, cfg.claudeVolume)
+			adapter, err := claude.NewClaude(startup, cfg.claudeVolume)
 			cancel()
 			if err != nil {
 				logger.Error("Claude startup rejected", "error", err.Error())
 				os.Exit(1)
 			}
 			features.ClaudeRunner = func(ctx context.Context, task, reference string) (string, error) {
-				result, err := claude.Run(ctx, task, reference)
+				result, err := adapter.Run(ctx, task, reference)
 				if err != nil && ctx.Err() == nil {
 					logger.Warn("Claude job failed", "stage", err.Error())
 				}
@@ -106,16 +106,16 @@ func main() {
 			features.ClaudeText = cfg.claudeText
 		}
 		startup, cancel := context.WithTimeout(ctx, 5*time.Second)
-		features.Jobs, err = asyncjobs.Open(startup, cfg.phase2DB, 30*time.Second)
+		features.Jobs, err = asyncjobs.Open(startup, cfg.jobsDB, 30*time.Second)
 		if err == nil {
-			features.Approvals = cfg.phase5Approvals
-			if cfg.phase5Approvals {
+			features.Approvals = cfg.policyApprovals
+			if cfg.policyApprovals {
 				features.Policy, err = features.Jobs.InitializePolicy(startup, features.Policy)
 			} else {
 				var managed bool
 				managed, err = features.Jobs.HasManagedPolicy(startup)
 				if err == nil && managed {
-					err = errors.New("managed policy database requires MUSE_HUB_PHASE5_APPROVALS=1")
+					err = errors.New("managed policy database requires MUSE_HUB_POLICY_APPROVALS=1")
 				}
 			}
 		}
@@ -127,7 +127,7 @@ func main() {
 			if features.Jobs != nil {
 				_ = features.Jobs.Close()
 			}
-			logger.Error("Phase 2 startup rejected", "error", err.Error())
+			logger.Error("job database startup rejected", "error", err.Error())
 			os.Exit(1)
 		}
 		defer features.Jobs.Close()
@@ -160,19 +160,19 @@ func main() {
 }
 
 type config struct {
-	auth             auth.Config
-	port             int
-	tailscaleHost    string
-	phase1Volume     string
-	phase2DB         string
-	phase2Subprocess bool
-	codexExe         string
-	codexHome        string
-	codexText        bool
-	claudeVolume     string
-	claudeText       bool
-	phase3Policy     string
-	phase5Approvals  bool
+	auth            auth.Config
+	port            int
+	tailscaleHost   string
+	claudeAskVolume string
+	jobsDB          string
+	dummySubprocess bool
+	codexExe        string
+	codexHome       string
+	codexText       bool
+	claudeVolume    string
+	claudeText      bool
+	policyFile      string
+	policyApprovals bool
 }
 
 var tailscaleDNSName = regexp.MustCompile(`(?i)^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.ts\.net$`)
@@ -216,27 +216,36 @@ func loadConfig() (config, error) {
 	if tailscaleHost != "" && !validTailscaleHost(tailscaleHost) {
 		return config{}, fmt.Errorf("MUSE_HUB_TAILSCALE_HOST must be a Tailscale DNS name, optionally followed by :port")
 	}
-	phase1Volume := os.Getenv("MUSE_HUB_PHASE1_AUTH_VOLUME")
-	if phase1Volume != "" && !phase1.ValidVolumeName(phase1Volume) {
-		return config{}, fmt.Errorf("MUSE_HUB_PHASE1_AUTH_VOLUME must be a Docker volume name")
+	askVolume, err := settingWithAlias("MUSE_HUB_CLAUDE_ASK_VOLUME", "MUSE_HUB_PHASE1_AUTH_VOLUME")
+	if err != nil {
+		return config{}, err
 	}
-	phase2DB := strings.TrimSpace(os.Getenv("MUSE_HUB_PHASE2_DB"))
-	if phase1Volume != "" && phase2DB != "" {
-		return config{}, errors.New("configure either Phase 1 ask or Phase 2 delegate")
+	if askVolume != "" && !claude.ValidVolumeName(askVolume) {
+		return config{}, errors.New("MUSE_HUB_CLAUDE_ASK_VOLUME must be a Docker volume name")
 	}
-	phase2Subprocess := strings.TrimSpace(os.Getenv("MUSE_HUB_PHASE2_SUBPROCESS"))
-	if phase2Subprocess != "" && phase2Subprocess != "1" {
-		return config{}, errors.New("MUSE_HUB_PHASE2_SUBPROCESS must be unset or 1")
+	jobsDB, err := jobsDBSetting()
+	if err != nil {
+		return config{}, err
 	}
-	if phase2Subprocess == "1" && (phase2DB == "" || !dummyworker.Supported) {
-		return config{}, errors.New("Phase 2 subprocess verification requires Windows and the job database")
+	if askVolume != "" && jobsDB != "" {
+		return config{}, errors.New("configure either MUSE_HUB_CLAUDE_ASK_VOLUME for ask or MUSE_HUB_JOBS_DB for delegate")
+	}
+	dummySubprocess, err := settingWithAlias("MUSE_HUB_DUMMY_SUBPROCESS", "MUSE_HUB_PHASE2_SUBPROCESS")
+	if err != nil {
+		return config{}, err
+	}
+	if dummySubprocess != "" && dummySubprocess != "1" {
+		return config{}, errors.New("MUSE_HUB_DUMMY_SUBPROCESS must be unset or 1")
+	}
+	if dummySubprocess == "1" && (jobsDB == "" || !dummyworker.Supported) {
+		return config{}, errors.New("dummy subprocess mode requires Windows and MUSE_HUB_JOBS_DB")
 	}
 	codexExe := strings.TrimSpace(os.Getenv("MUSE_HUB_CODEX_EXE"))
 	codexHome := strings.TrimSpace(os.Getenv("MUSE_HUB_CODEX_HOME"))
 	if (codexExe == "") != (codexHome == "") {
 		return config{}, errors.New("set both MUSE_HUB_CODEX_EXE and MUSE_HUB_CODEX_HOME to enable Codex")
 	}
-	if codexExe != "" && (phase2DB == "" || !dummyworker.Supported) {
+	if codexExe != "" && (jobsDB == "" || !dummyworker.Supported) {
 		return config{}, errors.New("Codex delegation requires Windows and the job database")
 	}
 	codexText := strings.TrimSpace(os.Getenv("MUSE_HUB_CODEX_TEXT"))
@@ -244,28 +253,50 @@ func loadConfig() (config, error) {
 		return config{}, errors.New("MUSE_HUB_CODEX_TEXT requires configured Codex delegation and must be unset or 1")
 	}
 	claudeVolume := strings.TrimSpace(os.Getenv("MUSE_HUB_CLAUDE_AUTH_VOLUME"))
-	if claudeVolume != "" && (!phase1.ValidVolumeName(claudeVolume) || phase2DB == "") {
+	if claudeVolume != "" && (!claude.ValidVolumeName(claudeVolume) || jobsDB == "") {
 		return config{}, errors.New("Claude delegation requires a Docker login volume name and the job database")
 	}
 	claudeText := strings.TrimSpace(os.Getenv("MUSE_HUB_CLAUDE_TEXT"))
 	if claudeText != "" && (claudeText != "1" || claudeVolume == "") {
 		return config{}, errors.New("MUSE_HUB_CLAUDE_TEXT requires configured Claude delegation and must be unset or 1")
 	}
-	phase3Policy := strings.TrimSpace(os.Getenv("MUSE_HUB_PHASE3_POLICY"))
-	if phase3Policy != "" && phase2DB == "" {
-		return config{}, errors.New("Phase 3 policy requires the job database")
+	policyFile, err := settingWithAlias("MUSE_HUB_POLICY_FILE", "MUSE_HUB_PHASE3_POLICY")
+	if err != nil {
+		return config{}, err
 	}
-	phase5 := strings.TrimSpace(os.Getenv("MUSE_HUB_PHASE5_APPROVALS"))
-	if phase5 != "" && phase5 != "1" {
-		return config{}, errors.New("MUSE_HUB_PHASE5_APPROVALS must be unset or 1")
+	if policyFile != "" && jobsDB == "" {
+		return config{}, errors.New("MUSE_HUB_POLICY_FILE requires MUSE_HUB_JOBS_DB")
 	}
-	if phase5 == "1" && phase3Policy == "" {
-		return config{}, errors.New("Phase 5 approvals require a policy configuration and job database")
+	approvals, err := settingWithAlias("MUSE_HUB_POLICY_APPROVALS", "MUSE_HUB_PHASE5_APPROVALS")
+	if err != nil {
+		return config{}, err
 	}
-	return config{auth: authConfig, port: port, tailscaleHost: tailscaleHost, phase1Volume: phase1Volume,
-		phase2DB: phase2DB, phase2Subprocess: phase2Subprocess == "1", codexExe: codexExe, codexHome: codexHome, codexText: codexText == "1",
+	if approvals != "" && approvals != "1" {
+		return config{}, errors.New("MUSE_HUB_POLICY_APPROVALS must be unset or 1")
+	}
+	if approvals == "1" && policyFile == "" {
+		return config{}, errors.New("policy approvals require MUSE_HUB_POLICY_FILE and MUSE_HUB_JOBS_DB")
+	}
+	return config{auth: authConfig, port: port, tailscaleHost: tailscaleHost, claudeAskVolume: askVolume,
+		jobsDB: jobsDB, dummySubprocess: dummySubprocess == "1", codexExe: codexExe, codexHome: codexHome, codexText: codexText == "1",
 		claudeVolume: claudeVolume, claudeText: claudeText == "1",
-		phase3Policy: phase3Policy, phase5Approvals: phase5 == "1"}, nil
+		policyFile: policyFile, policyApprovals: approvals == "1"}, nil
+}
+
+func jobsDBSetting() (string, error) {
+	return settingWithAlias("MUSE_HUB_JOBS_DB", "MUSE_HUB_PHASE2_DB")
+}
+
+func settingWithAlias(name, alias string) (string, error) {
+	value := strings.TrimSpace(os.Getenv(name))
+	legacy := strings.TrimSpace(os.Getenv(alias))
+	if value == "" {
+		return legacy, nil
+	}
+	if legacy != "" && value != legacy {
+		return "", fmt.Errorf("%s conflicts with %s", name, alias)
+	}
+	return value, nil
 }
 
 func envOr(key, fallback string) string {

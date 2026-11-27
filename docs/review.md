@@ -1,8 +1,8 @@
-# Phase 4 sessions and review
+# Sessions and review
 
-English | [日本語](phase4-review.ja.md)
+English | [日本語](review.ja.md)
 
-Start the Hub with the [Phase 3 policy](phase3-policy.md). Use a policy that permits `read` and `consult` for `arithmetic` and allows `code: full` for both dummy adapters. The review runs entirely inside the Hub.
+Start the Hub with a [disclosure policy](policy.md) that permits `read` and `consult` for `arithmetic` and allows `code: full` for both dummy adapters. The review runs entirely inside the Hub.
 
 ## Start a review
 
