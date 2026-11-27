@@ -3,6 +3,7 @@ package asyncjobs
 import (
 	"context"
 	"crypto/sha256"
+	"database/sql"
 	"errors"
 	"path/filepath"
 	"sync"
@@ -189,5 +190,40 @@ func TestStopUnconfirmedDoesNotReportCancelled(t *testing.T) {
 	job, err := m.Cancel(t.Context(), id)
 	if err != nil || job.Status != Failed || job.Result != nil {
 		t.Fatalf("unconfirmed stop was reported as success: %v, %v", job, err)
+	}
+}
+
+func TestCodexAgentPersistsAlongsideLegacyJobs(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "jobs.sqlite")
+	original := openTestManager(t, path, time.Second)
+	run := func(context.Context) (string, error) { return "5", nil }
+	legacyInput := Submission{RequestID: "legacy", WorkKey: "synthetic-sum-v1", Run: run}
+	legacyID := submit(t, original, legacyInput)
+	awaitStatus(t, original, legacyID, Succeeded)
+	if err := original.Close(); err != nil {
+		t.Fatal(err)
+	}
+	// Reproduce a database written before jobs recorded an agent name.
+	db, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, alterErr := db.ExecContext(t.Context(), "ALTER TABLE delegate_jobs DROP COLUMN agent")
+	if err := errors.Join(alterErr, db.Close()); err != nil {
+		t.Fatal(err)
+	}
+
+	upgraded := openTestManager(t, path, time.Second)
+	if got := submit(t, upgraded, legacyInput); got != legacyID {
+		t.Fatal("upgrading the database changed the retry identity of the legacy job")
+	}
+	if job := awaitStatus(t, upgraded, legacyID, Succeeded); job.Agent != "dummy" {
+		t.Fatal("legacy job did not retain the dummy agent")
+	}
+	codexID := submit(t, upgraded, Submission{
+		RequestID: "codex", WorkKey: "codex-synthetic-sum-v1", Agent: "codex", Run: run,
+	})
+	if job := awaitStatus(t, upgraded, codexID, Succeeded); job.Agent != "codex" || job.Result == nil || *job.Result != "5" {
+		t.Fatal("Codex result or agent was not stored")
 	}
 }

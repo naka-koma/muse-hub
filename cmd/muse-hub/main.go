@@ -73,6 +73,13 @@ func main() {
 		if cfg.phase2Subprocess {
 			features.DelegateRunner = dummyworker.Run
 		}
+		if cfg.codexExe != "" {
+			features.CodexRunner, err = dummyworker.NewCodex(cfg.codexExe, cfg.codexHome)
+			if err != nil {
+				logger.Error("Codex startup rejected", "error", err.Error())
+				os.Exit(1)
+			}
+		}
 		startup, cancel := context.WithTimeout(ctx, 5*time.Second)
 		features.Jobs, err = asyncjobs.Open(startup, cfg.phase2DB, 30*time.Second)
 		if err == nil {
@@ -134,6 +141,8 @@ type config struct {
 	phase1Volume     string
 	phase2DB         string
 	phase2Subprocess bool
+	codexExe         string
+	codexHome        string
 	phase3Policy     string
 	phase5Approvals  bool
 }
@@ -194,6 +203,14 @@ func loadConfig() (config, error) {
 	if phase2Subprocess == "1" && (phase2DB == "" || !dummyworker.Supported) {
 		return config{}, errors.New("Phase 2 subprocess verification requires Windows and the job database")
 	}
+	codexExe := strings.TrimSpace(os.Getenv("MUSE_HUB_CODEX_EXE"))
+	codexHome := strings.TrimSpace(os.Getenv("MUSE_HUB_CODEX_HOME"))
+	if (codexExe == "") != (codexHome == "") {
+		return config{}, errors.New("set both MUSE_HUB_CODEX_EXE and MUSE_HUB_CODEX_HOME to enable Codex")
+	}
+	if codexExe != "" && (phase2DB == "" || !dummyworker.Supported) {
+		return config{}, errors.New("Codex delegation requires Windows and the job database")
+	}
 	phase3Policy := strings.TrimSpace(os.Getenv("MUSE_HUB_PHASE3_POLICY"))
 	if phase3Policy != "" && phase2DB == "" {
 		return config{}, errors.New("Phase 3 policy requires the job database")
@@ -206,7 +223,8 @@ func loadConfig() (config, error) {
 		return config{}, errors.New("Phase 5 approvals require a policy configuration and job database")
 	}
 	return config{auth: authConfig, port: port, tailscaleHost: tailscaleHost, phase1Volume: phase1Volume,
-		phase2DB: phase2DB, phase2Subprocess: phase2Subprocess == "1", phase3Policy: phase3Policy, phase5Approvals: phase5 == "1"}, nil
+		phase2DB: phase2DB, phase2Subprocess: phase2Subprocess == "1", codexExe: codexExe, codexHome: codexHome,
+		phase3Policy: phase3Policy, phase5Approvals: phase5 == "1"}, nil
 }
 
 func envOr(key, fallback string) string {

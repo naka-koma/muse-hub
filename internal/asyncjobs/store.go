@@ -18,7 +18,8 @@ const schema = `CREATE TABLE IF NOT EXISTS delegate_jobs (
 	created_at INTEGER NOT NULL,
 	started_at INTEGER,
 	finished_at INTEGER,
-	result TEXT
+	result TEXT,
+	agent TEXT NOT NULL DEFAULT 'dummy' CHECK(agent IN ('dummy', 'codex'))
 );
 CREATE INDEX IF NOT EXISTS delegate_jobs_history ON delegate_jobs(created_at DESC, id DESC);
 CREATE INDEX IF NOT EXISTS delegate_jobs_retention ON delegate_jobs(finished_at);
@@ -65,7 +66,7 @@ CREATE TABLE IF NOT EXISTS policy_proposals (
 	decided_at INTEGER
 );`
 
-const snapshotColumns = "j.id, j.status, j.created_at, j.started_at, j.finished_at, j.result, r.session_id"
+const snapshotColumns = "j.id, j.status, j.created_at, j.started_at, j.finished_at, j.result, r.session_id, j.agent"
 
 type store struct {
 	db   *sql.DB
@@ -98,6 +99,17 @@ func openStore(ctx context.Context, path string, now time.Time) (*store, error) 
 			return nil, ErrUnavailable
 		}
 	}
+	var agentColumn int
+	if err := conn.QueryRowContext(ctx, `SELECT count(*) FROM pragma_table_info('delegate_jobs') WHERE name='agent'`).Scan(&agentColumn); err != nil {
+		_ = s.close()
+		return nil, ErrUnavailable
+	}
+	if agentColumn == 0 {
+		if _, err := conn.ExecContext(ctx, `ALTER TABLE delegate_jobs ADD COLUMN agent TEXT NOT NULL DEFAULT 'dummy' CHECK(agent IN ('dummy', 'codex'))`); err != nil {
+			_ = s.close()
+			return nil, ErrUnavailable
+		}
+	}
 	if _, err := conn.ExecContext(ctx, `UPDATE delegate_jobs SET status='interrupted', finished_at=?
 		WHERE status IN ('queued','running')`, now.UnixMilli()); err != nil {
 		_ = s.close()
@@ -124,7 +136,7 @@ func readSnapshot(row scanner) (Snapshot, error) {
 	var created int64
 	var started, finished sql.NullInt64
 	var result, session sql.NullString
-	err := row.Scan(&job.JobID, &job.Status, &created, &started, &finished, &result, &session)
+	err := row.Scan(&job.JobID, &job.Status, &created, &started, &finished, &result, &session, &job.Agent)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Snapshot{}, ErrNotFound
 	}

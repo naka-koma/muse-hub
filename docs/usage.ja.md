@@ -16,6 +16,8 @@
 | `MUSE_HUB_PHASE1_AUTH_VOLUME` | 未設定 | 専用のDockerログインボリューム。設定すると [Phase 1の `ask` 検証](phase1-isolation.ja.md) を有効にします。 |
 | `MUSE_HUB_PHASE2_DB` | 未設定 | SQLiteファイルの保存先。設定すると [Phase 2の非同期ジョブ検証](phase2-jobs.ja.md) を有効にします。 |
 | `MUSE_HUB_PHASE2_SUBPROCESS` | 未設定 | Windowsで `1` を指定すると、ダミージョブを子プロセスで実行します。ジョブDBの設定も必要です。 |
+| `MUSE_HUB_CODEX_EXE` | 未設定 | [Codexへの委譲検証](phase2-jobs.ja.md#windowsでcodexへの委譲を確認する) に使うWindows版 `codex.exe` の絶対パス。 |
+| `MUSE_HUB_CODEX_HOME` | 未設定 | Codex専用ログインディレクトリの絶対パス。実行ファイルとジョブDBの設定も必要です。 |
 | `MUSE_HUB_PHASE3_POLICY` | 未設定 | [Phase 3のポリシーと監査](phase3-policy.ja.md) に使うYAMLのパス。ジョブDBの設定も必要です。 |
 | `MUSE_HUB_PHASE5_APPROVALS` | 未設定 | `1` で [ポリシー提案とローカル承認](phase5-approval.ja.md) を有効にします。ポリシーとジョブDBの設定も必要です。 |
 
@@ -27,7 +29,7 @@ Museがカスタムコネクタでどの形式を送れるかは、このサー�
 
 - サーバーは`127.0.0.1`だけで待ち受けます。tailnet内から接続するにはTailscale Serveを使います。
 - ログにはツール名、許可・拒否、job ID、処理時間を記録します。トークン、ヘッダー、`echo`の入力は記録しません。
-- 個人データを読み書きせず、CLIや外部プロセスも起動しません。
+- 既定のツールは、ダミーデータをサーバー内で処理します。任意で有効にするワーカーの設定と入力制限は、各検証手順を参照してください。
 
 ## ツール
 

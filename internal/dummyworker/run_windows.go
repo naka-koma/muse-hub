@@ -50,14 +50,11 @@ func Run(ctx context.Context) (string, error) {
 		return "", errors.New("could not start the isolated dummy process tree")
 	}
 	defer tree.close()
-	if err := tree.waitEmpty(ctx); err != nil {
-		if stopErr := tree.stop(); stopErr != nil {
-			return "", stopErr
-		}
+	exit, err := tree.wait(ctx)
+	if err != nil {
 		return "", err
 	}
-	var exit uint32
-	if err := windows.GetExitCodeProcess(tree.process, &exit); err != nil || exit != 5 {
+	if exit != childSucceeded {
 		return "", errors.New("dummy process tree did not return the expected result")
 	}
 	return strconv.FormatUint(uint64(exit), 10), nil
@@ -67,7 +64,9 @@ func Run(ctx context.Context) (string, error) {
 func Command(args []string) (int, bool) {
 	switch {
 	case len(args) == 2 && args[0] == parentArg:
-		return runParent(args[1], leafArg), true
+		return runDummyParent(args[1], leafArg), true
+	case len(args) == 5 && args[0] == codexParentArg:
+		return runCodexParent(args[4], args[1], args[2], args[3]), true
 	case len(args) == 1 && args[0] == leafArg:
 		time.Sleep(5 * time.Second)
 		return 2 + 3, true
@@ -76,9 +75,23 @@ func Command(args []string) (int, bool) {
 	}
 }
 
-const parentCancelled = 2
+const (
+	parentCancelled = 2
+	childSucceeded  = 5
+)
 
-func runParent(cancelArg string, childArgs ...string) int {
+func runDummyParent(cancelArg string, childArgs ...string) int {
+	exe, err := os.Executable()
+	if err != nil {
+		return 1
+	}
+	return runParent(cancelArg, exec.Command(exe, childArgs...), func(err error) bool {
+		var exit *exec.ExitError
+		return errors.As(err, &exit) && exit.ExitCode() == childSucceeded
+	})
+}
+
+func runParent(cancelArg string, cmd *exec.Cmd, succeeded func(error) bool) int {
 	number, err := strconv.ParseUint(cancelArg, 10, strconv.IntSize)
 	if err != nil || number == 0 {
 		return 1
@@ -92,11 +105,6 @@ func runParent(cancelArg string, childArgs ...string) int {
 	if initial == windows.WAIT_OBJECT_0 {
 		return parentCancelled
 	}
-	exe, err := os.Executable()
-	if err != nil {
-		return 1
-	}
-	cmd := exec.Command(exe, childArgs...)
 	cmd.SysProcAttr = &syscall.SysProcAttr{CreationFlags: windows.CREATE_NO_WINDOW, NoInheritHandles: true}
 	if err := cmd.Start(); err != nil {
 		return 1
@@ -106,11 +114,10 @@ func runParent(cancelArg string, childArgs ...string) int {
 	for {
 		select {
 		case err := <-done:
-			var exit *exec.ExitError
-			if errors.As(err, &exit) && exit.ExitCode() == 5 {
-				return 5
+			if succeeded(err) {
+				return childSucceeded
 			}
-			return 1
+			return childFailed
 		default:
 		}
 		status, err := windows.WaitForSingleObject(cancel, 15)
@@ -124,6 +131,9 @@ func runParent(cancelArg string, childArgs ...string) int {
 		}
 	}
 }
+
+// childFailed records a normal wait for a worker that exited unsuccessfully.
+const childFailed = 3
 
 func startTree(exe string, args ...string) (*processTree, error) {
 	job, err := windows.CreateJobObject(nil, nil)
@@ -231,13 +241,28 @@ func (t *processTree) waitEmpty(ctx context.Context) error {
 	}
 }
 
+func (t *processTree) wait(ctx context.Context) (uint32, error) {
+	if err := t.waitEmpty(ctx); err != nil {
+		if stopErr := t.stop(); stopErr != nil {
+			return 0, stopErr
+		}
+		return 0, err
+	}
+	var exit uint32
+	err := windows.GetExitCodeProcess(t.process, &exit)
+	return exit, err
+}
+
 func (t *processTree) stop() error {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 	if windows.SetEvent(t.cancel) == nil && t.waitEmpty(ctx) == nil {
 		var exit uint32
-		if windows.GetExitCodeProcess(t.process, &exit) == nil && (exit == parentCancelled || exit == 5) {
-			return nil
+		if windows.GetExitCodeProcess(t.process, &exit) == nil {
+			switch exit {
+			case parentCancelled, childSucceeded, childFailed:
+				return nil
+			}
 		}
 	}
 	// Force cleanup if the parent did not confirm that it waited for the leaf.

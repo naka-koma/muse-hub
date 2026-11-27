@@ -16,6 +16,8 @@ English | [日本語](usage.ja.md) | [Setup and first run](../README.md)
 | `MUSE_HUB_PHASE1_AUTH_VOLUME` | Unset | Dedicated Docker login volume. Setting it enables the [Phase 1 `ask` check](phase1-isolation.md). |
 | `MUSE_HUB_PHASE2_DB` | Unset | Local SQLite path. Setting it enables the [Phase 2 asynchronous job check](phase2-jobs.md). |
 | `MUSE_HUB_PHASE2_SUBPROCESS` | Unset | Set to `1` on Windows to run the same dummy job in a process tree. Requires the job database. |
+| `MUSE_HUB_CODEX_EXE` | Unset | Absolute path to the native Windows Codex executable for the [Codex probe](phase2-jobs.md#check-codex-delegation-on-windows). |
+| `MUSE_HUB_CODEX_HOME` | Unset | Absolute path to the dedicated Codex login directory. Requires the executable and the job database. |
 | `MUSE_HUB_PHASE3_POLICY` | Unset | Local YAML path for [Phase 3 policy and audit](phase3-policy.md). Requires the job database. |
 | `MUSE_HUB_PHASE5_APPROVALS` | Unset | Set to `1` to enable [policy proposals and local approval](phase5-approval.md). Requires the policy path and job database. |
 
@@ -27,7 +29,7 @@ To start without building an executable first, set the token and run `go run ./c
 
 - The server listens only on `127.0.0.1`. Use Tailscale Serve for access within the tailnet.
 - Logs include the tool name, allow or deny outcome, job ID, and duration. They exclude tokens, headers, and `echo` input.
-- The server does not read or write personal data, launch a CLI, or start external processes.
+- The default tools work with synthetic inputs and run inside the server. The optional workers have their own setup and input limits.
 
 ## Tools
 
