@@ -18,16 +18,17 @@ const (
 )
 
 var (
-	ErrNotFound     = errors.New("job_not_found")
-	ErrAtCapacity   = errors.New("job_capacity_reached")
-	ErrSessionBusy  = errors.New("session_busy")
-	ErrConflict     = errors.New("request_id_conflict")
-	ErrInvalidInput = errors.New("invalid_job_input")
-	ErrUnavailable  = errors.New("job_store_unavailable")
-	ErrCancelWait   = errors.New("job_stop_not_confirmed")
-	errCanceled     = errors.New("job canceled by request")
-	errInterrupted  = errors.New("hub shutting down")
-	idPattern       = regexp.MustCompile(`^[A-Za-z0-9_-]{1,128}$`)
+	ErrNotFound        = errors.New("job_not_found")
+	ErrAtCapacity      = errors.New("job_capacity_reached")
+	ErrSessionBusy     = errors.New("session_busy")
+	ErrConflict        = errors.New("request_id_conflict")
+	ErrInvalidInput    = errors.New("invalid_job_input")
+	ErrUnavailable     = errors.New("job_store_unavailable")
+	ErrCancelWait      = errors.New("job_stop_not_confirmed")
+	ErrStopUnconfirmed = errors.New("worker process stop not confirmed")
+	errCanceled        = errors.New("job canceled by request")
+	errInterrupted     = errors.New("hub shutting down")
+	idPattern          = regexp.MustCompile(`^[A-Za-z0-9_-]{1,128}$`)
 )
 
 type Status string
@@ -56,7 +57,7 @@ type Submission struct {
 	RequestID string
 	Session   string
 	WorkKey   string
-	// Run must return only after its work has stopped, including on cancellation.
+	// Run must return only after its work has stopped, or report ErrStopUnconfirmed.
 	Run func(context.Context) (string, error)
 }
 
@@ -176,6 +177,8 @@ func (m *Manager) execute(ctx context.Context, id string, job *activeJob, run fu
 	state := Failed
 	var saved any
 	switch {
+	case errors.Is(runErr, ErrStopUnconfirmed):
+		// Keep the failed state instead of claiming the cancellation succeeded.
 	case errors.Is(context.Cause(workCtx), errInterrupted):
 		state = Interrupted
 	case errors.Is(context.Cause(workCtx), errCanceled):

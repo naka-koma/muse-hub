@@ -31,7 +31,11 @@ type ListJobsOutput struct {
 	Jobs []asyncjobs.Snapshot `json:"jobs"`
 }
 
-func RegisterDelegation(server *mcp.Server, manager *asyncjobs.Manager, logger *slog.Logger, rules *policy.Policy, approvals bool) {
+func RegisterDelegation(server *mcp.Server, manager *asyncjobs.Manager, logger *slog.Logger, rules *policy.Policy, approvals bool,
+	runner func(context.Context) (string, error)) {
+	if runner == nil {
+		runner = runDummyDelegation
+	}
 	gate := policyGate{policy: rules, manager: manager}
 	if rules != nil {
 		gate.register(server)
@@ -62,7 +66,7 @@ func RegisterDelegation(server *mcp.Server, manager *asyncjobs.Manager, logger *
 			return nil, StartJobOutput{}, asyncjobs.ErrInvalidInput
 		}
 		id, err := manager.Submit(ctx, asyncjobs.Submission{
-			RequestID: input.RequestID, Session: input.Session, WorkKey: "synthetic-sum-v1", Run: runDummyDelegation,
+			RequestID: input.RequestID, Session: input.Session, WorkKey: "synthetic-sum-v1", Run: runner,
 		})
 		logDelegation(logger, "delegate", id, started, err)
 		return nil, StartJobOutput{JobID: id}, err

@@ -15,6 +15,7 @@
 | `MUSE_HUB_TAILSCALE_HOST` | 未設定 | Serve経由の接続を許可するTailscaleのホスト名。HTTPSポートが443以外なら`:ポート番号`を付けます。 |
 | `MUSE_HUB_PHASE1_AUTH_VOLUME` | 未設定 | 専用のDockerログインボリューム。設定すると [Phase 1の `ask` 検証](phase1-isolation.ja.md) を有効にします。 |
 | `MUSE_HUB_PHASE2_DB` | 未設定 | SQLiteファイルの保存先。設定すると [Phase 2の非同期ジョブ検証](phase2-jobs.ja.md) を有効にします。 |
+| `MUSE_HUB_PHASE2_SUBPROCESS` | 未設定 | Windowsで `1` を指定すると、ダミージョブを子プロセスで実行します。ジョブDBの設定も必要です。 |
 | `MUSE_HUB_PHASE3_POLICY` | 未設定 | [Phase 3のポリシーと監査](phase3-policy.ja.md) に使うYAMLのパス。ジョブDBの設定も必要です。 |
 | `MUSE_HUB_PHASE5_APPROVALS` | 未設定 | `1` で [ポリシー提案とローカル承認](phase5-approval.ja.md) を有効にします。ポリシーとジョブDBの設定も必要です。 |
 
