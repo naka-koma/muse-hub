@@ -22,13 +22,19 @@ type Features struct {
 	DelegateRunner func(context.Context) (string, error)
 	CodexRunner    func(context.Context, string, string) (string, error)
 	CodexText      bool
+	ClaudeRunner   func(context.Context, string, string) (string, error)
+	ClaudeText     bool
 }
 
 func NewHandler(authConfig auth.Config, tailscaleHost string, logger *slog.Logger, features Features) http.Handler {
 	server := mcp.NewServer(&mcp.Implementation{Name: "muse-hub", Version: "0.1.0"}, nil)
 	if features.Jobs != nil {
 		tools.Register(server, nil, logger)
-		tools.RegisterDelegation(server, features.Jobs, logger, features.Policy, features.Approvals, features.DelegateRunner, features.CodexRunner, features.CodexText)
+		agents := map[string]tools.DelegationAgent{
+			"codex":  {Run: features.CodexRunner, AllowText: features.CodexText},
+			"claude": {Run: features.ClaudeRunner, AllowText: features.ClaudeText},
+		}
+		tools.RegisterDelegation(server, features.Jobs, logger, features.Policy, features.Approvals, features.DelegateRunner, agents)
 	} else {
 		tools.Register(server, jobs.NewManager(), logger)
 		if features.Ask != nil {

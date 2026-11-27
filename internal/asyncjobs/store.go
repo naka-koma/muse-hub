@@ -21,7 +21,8 @@ const schema = `CREATE TABLE IF NOT EXISTS delegate_jobs (
 	result TEXT,
 	agent TEXT NOT NULL DEFAULT 'dummy' CHECK(agent IN ('dummy', 'codex')),
 	unverified INTEGER NOT NULL DEFAULT 0 CHECK(unverified IN (0, 1)),
-	codex_text_result TEXT
+	codex_text_result TEXT,
+	delegation_agent TEXT
 );
 CREATE INDEX IF NOT EXISTS delegate_jobs_history ON delegate_jobs(created_at DESC, id DESC);
 CREATE INDEX IF NOT EXISTS delegate_jobs_retention ON delegate_jobs(finished_at);
@@ -68,7 +69,7 @@ CREATE TABLE IF NOT EXISTS policy_proposals (
 	decided_at INTEGER
 );`
 
-const snapshotColumns = "j.id, j.status, j.created_at, j.started_at, j.finished_at, COALESCE(j.codex_text_result, j.result), r.session_id, j.agent, j.unverified"
+const snapshotColumns = "j.id, j.status, j.created_at, j.started_at, j.finished_at, COALESCE(j.codex_text_result, j.result), r.session_id, COALESCE(j.delegation_agent, j.agent), j.unverified"
 
 type store struct {
 	db   *sql.DB
@@ -105,6 +106,7 @@ func openStore(ctx context.Context, path string, now time.Time) (*store, error) 
 		{"agent", "agent TEXT NOT NULL DEFAULT 'dummy' CHECK(agent IN ('dummy', 'codex'))"},
 		{"unverified", "unverified INTEGER NOT NULL DEFAULT 0 CHECK(unverified IN (0, 1))"},
 		{"codex_text_result", "codex_text_result TEXT"},
+		{"delegation_agent", "delegation_agent TEXT"},
 	} {
 		var existing int
 		if err := conn.QueryRowContext(ctx, `SELECT count(*) FROM pragma_table_info('delegate_jobs') WHERE name=?`, column.name).Scan(&existing); err != nil {

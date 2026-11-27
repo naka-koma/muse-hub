@@ -88,6 +88,23 @@ func main() {
 			}
 		}
 		features.CodexText = cfg.codexText
+		if cfg.claudeVolume != "" {
+			startup, cancel := context.WithTimeout(ctx, 20*time.Second)
+			claude, err := phase1.NewClaude(startup, cfg.claudeVolume)
+			cancel()
+			if err != nil {
+				logger.Error("Claude startup rejected", "error", err.Error())
+				os.Exit(1)
+			}
+			features.ClaudeRunner = func(ctx context.Context, task, reference string) (string, error) {
+				result, err := claude.Run(ctx, task, reference)
+				if err != nil && ctx.Err() == nil {
+					logger.Warn("Claude job failed", "stage", err.Error())
+				}
+				return result, err
+			}
+			features.ClaudeText = cfg.claudeText
+		}
 		startup, cancel := context.WithTimeout(ctx, 5*time.Second)
 		features.Jobs, err = asyncjobs.Open(startup, cfg.phase2DB, 30*time.Second)
 		if err == nil {
@@ -152,6 +169,8 @@ type config struct {
 	codexExe         string
 	codexHome        string
 	codexText        bool
+	claudeVolume     string
+	claudeText       bool
 	phase3Policy     string
 	phase5Approvals  bool
 }
@@ -224,6 +243,14 @@ func loadConfig() (config, error) {
 	if codexText != "" && (codexText != "1" || codexExe == "") {
 		return config{}, errors.New("MUSE_HUB_CODEX_TEXT requires configured Codex delegation and must be unset or 1")
 	}
+	claudeVolume := strings.TrimSpace(os.Getenv("MUSE_HUB_CLAUDE_AUTH_VOLUME"))
+	if claudeVolume != "" && (!phase1.ValidVolumeName(claudeVolume) || phase2DB == "") {
+		return config{}, errors.New("Claude delegation requires a Docker login volume name and the job database")
+	}
+	claudeText := strings.TrimSpace(os.Getenv("MUSE_HUB_CLAUDE_TEXT"))
+	if claudeText != "" && (claudeText != "1" || claudeVolume == "") {
+		return config{}, errors.New("MUSE_HUB_CLAUDE_TEXT requires configured Claude delegation and must be unset or 1")
+	}
 	phase3Policy := strings.TrimSpace(os.Getenv("MUSE_HUB_PHASE3_POLICY"))
 	if phase3Policy != "" && phase2DB == "" {
 		return config{}, errors.New("Phase 3 policy requires the job database")
@@ -237,6 +264,7 @@ func loadConfig() (config, error) {
 	}
 	return config{auth: authConfig, port: port, tailscaleHost: tailscaleHost, phase1Volume: phase1Volume,
 		phase2DB: phase2DB, phase2Subprocess: phase2Subprocess == "1", codexExe: codexExe, codexHome: codexHome, codexText: codexText == "1",
+		claudeVolume: claudeVolume, claudeText: claudeText == "1",
 		phase3Policy: phase3Policy, phase5Approvals: phase5 == "1"}, nil
 }
 

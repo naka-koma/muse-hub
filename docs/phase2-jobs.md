@@ -52,3 +52,9 @@ With Codex configured, set `MUSE_HUB_CODEX_TEXT=1` before starting a Hub with no
 ```
 
 Submit only text you can share with Codex. The CLI gets the text over standard input and uses the same restricted tool setup as the arithmetic check. The Hub saves the reply for `get_result`, with a limit of 16 KiB. A Hub with a disclosure policy accepts only the fixed probe and withholds results from earlier free-text requests.
+
+## Delegate to Claude
+
+Prepare the [isolated Claude container](phase1-isolation.md) and keep its Compose proxy running. To enable asynchronous Claude jobs, configure `MUSE_HUB_CLAUDE_AUTH_VOLUME` and the job database. Set `MUSE_HUB_CLAUDE_TEXT=1` to allow tasks and context on a Hub without a disclosure policy. The input and output limits are the same as for Codex. Claude runs one job at a time.
+
+Use `agent: "claude"` with `delegate`, then pass its job ID to `get_result`. The adapter sends prompts over standard input, disables Claude's tools and connectors, and removes the job container when finished or cancelled.
